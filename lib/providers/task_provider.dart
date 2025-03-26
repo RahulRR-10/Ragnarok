@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/task.dart';
 import '../config/xp_config.dart';
 import 'package:uuid/uuid.dart';
+import 'dart:convert';
 
 class TaskProvider extends ChangeNotifier {
   static const int _maxTitleLength = 100;
@@ -96,7 +97,7 @@ class TaskProvider extends ChangeNotifier {
 
       if (tasksJson != null) {
         _tasks = tasksJson
-            .map((taskJson) => Task.fromJsonString(taskJson))
+            .map((taskJson) => Task.fromJson(jsonDecode(taskJson)))
             .toList()
           ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
         notifyListeners();
@@ -109,7 +110,8 @@ class TaskProvider extends ChangeNotifier {
 
   Future<void> _saveTasks() async {
     try {
-      final tasksJson = _tasks.map((task) => task.toJsonString()).toList();
+      final tasksJson =
+          _tasks.map((task) => jsonEncode(task.toJson())).toList();
       await _prefs.setStringList('tasks', tasksJson);
       await _prefs.setInt('totalXP', _totalXP);
       await _prefs.setInt('currentLevel', _currentLevel);
@@ -150,12 +152,31 @@ class TaskProvider extends ChangeNotifier {
   void toggleTaskCompletion(String taskId) {
     final taskIndex = _tasks.indexWhere((task) => task.id == taskId);
     if (taskIndex != -1) {
-      final previousState = _tasks[taskIndex].isCompleted;
-      _tasks[taskIndex].toggleCompletion();
+      final task = _tasks[taskIndex];
+      final previousState = task.isCompleted;
 
-      if (!previousState && _tasks[taskIndex].isCompleted) {
+      // Create a new task with toggled completion state
+      final updatedTask = Task(
+        id: task.id,
+        title: task.title,
+        isCompleted: !previousState,
+        subtasks: task.subtasks,
+        xpEarned: !previousState ? calculateTaskXP(task) : 0,
+        completedAt: !previousState ? DateTime.now() : null,
+        createdAt: task.createdAt,
+        estimatedDuration: task.estimatedDuration,
+        isRecurring: task.isRecurring,
+        category: task.category,
+        difficulty: task.difficulty,
+      );
+
+      _tasks[taskIndex] = updatedTask;
+
+      if (!previousState && updatedTask.isCompleted) {
         _tasksCompletedInSession++;
         _lastTaskCompletionTime = DateTime.now();
+        addXP(updatedTask.xpEarned);
+        _saveTasks(); // Save after updating XP and completion
       }
 
       notifyListeners();
@@ -165,7 +186,7 @@ class TaskProvider extends ChangeNotifier {
   void addXP(int amount) {
     _totalXP += amount;
     _updateLevel();
-    _saveTasks();
+    _saveTasks(); // Save after updating XP
     notifyListeners();
   }
 
@@ -176,8 +197,15 @@ class TaskProvider extends ChangeNotifier {
       final subtaskIndex =
           task.subtasks.indexWhere((subtask) => subtask.id == subtaskId);
       if (subtaskIndex != -1) {
-        task.subtasks[subtaskIndex].isCompleted =
-            !task.subtasks[subtaskIndex].isCompleted;
+        final subtask = task.subtasks[subtaskIndex];
+        final updatedSubtask = Subtask(
+          id: subtask.id,
+          title: subtask.title,
+          isCompleted: !subtask.isCompleted,
+        );
+        final updatedSubtasks = List<Subtask>.from(task.subtasks);
+        updatedSubtasks[subtaskIndex] = updatedSubtask;
+        _tasks[taskIndex] = task.copyWith(subtasks: updatedSubtasks);
         notifyListeners();
       }
     }
@@ -299,10 +327,8 @@ class TaskProvider extends ChangeNotifier {
   int calculateTaskXP(Task task) {
     int xp = 0;
 
-    // Base XP for completing the task (always awarded if completed)
-    if (task.isCompleted) {
-      xp += BASE_XP;
-    }
+    // Base XP for completing the task
+    xp += BASE_XP;
 
     // Handle subtasks if they exist
     if (task.subtasks.isNotEmpty) {
@@ -392,24 +418,36 @@ class TaskProvider extends ChangeNotifier {
 
     final task = _tasks[taskIndex];
     final subtasks = subtaskTitles
-        .map((title) => Task(
+        .map((title) => Subtask(
               id: const Uuid().v4(),
               title: title,
               isCompleted: false,
-              subtasks: const [],
-              xpEarned: 0,
-              completedAt: null,
-              createdAt: DateTime.now(),
-              estimatedDuration: task.estimatedDuration != null
-                  ? (task.estimatedDuration! ~/ subtaskTitles.length)
-                  : null,
-              isRecurring: task.isRecurring,
-              category: task.category,
             ))
         .toList();
 
     _tasks[taskIndex] = task.copyWith(subtasks: subtasks);
     await _saveTasks();
     notifyListeners();
+  }
+
+  void updateTaskDifficulty(String taskId, TaskDifficulty difficulty) {
+    final taskIndex = _tasks.indexWhere((task) => task.id == taskId);
+    if (taskIndex != -1) {
+      final task = _tasks[taskIndex];
+      _tasks[taskIndex] = Task(
+        id: task.id,
+        title: task.title,
+        isCompleted: task.isCompleted,
+        subtasks: task.subtasks,
+        xpEarned: task.xpEarned,
+        completedAt: task.completedAt,
+        createdAt: task.createdAt,
+        estimatedDuration: task.estimatedDuration,
+        isRecurring: task.isRecurring,
+        category: task.category,
+        difficulty: difficulty,
+      );
+      notifyListeners();
+    }
   }
 }

@@ -11,29 +11,29 @@ class ProgressScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return NavigationWrapper(
       initialIndex: 2,
-      child: Consumer<TaskProvider>(
-        builder: (context, taskProvider, child) {
-          final totalXP = taskProvider.totalXP;
-          final currentLevel = taskProvider.currentLevel;
-          final levelTitle = taskProvider.getLevelTitle(currentLevel);
-          final levelProgress = taskProvider.getLevelProgress();
-          final xpToNextLevel = taskProvider.getXPToNextLevel();
-          final todayXP = taskProvider.getTodayXP();
-          final achievements = taskProvider.checkAchievements();
+      child: Scaffold(
+        body: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Colors.deepPurple.shade300,
+                Colors.deepPurple.shade600,
+              ],
+            ),
+          ),
+          child: Consumer<TaskProvider>(
+            builder: (context, taskProvider, child) {
+              final totalXP = taskProvider.totalXP;
+              final currentLevel = taskProvider.currentLevel;
+              final levelTitle = taskProvider.getLevelTitle(currentLevel);
+              final levelProgress = taskProvider.getLevelProgress();
+              final xpToNextLevel = taskProvider.getXPToNextLevel();
+              final todayXP = taskProvider.getTodayXP();
+              final achievements = taskProvider.checkAchievements();
 
-          return Scaffold(
-            body: Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    Theme.of(context).colorScheme.primary.withOpacity(0.1),
-                    Theme.of(context).colorScheme.secondary.withOpacity(0.1),
-                  ],
-                ),
-              ),
-              child: SafeArea(
+              return SafeArea(
                 child: SingleChildScrollView(
                   padding: const EdgeInsets.all(16.0),
                   child: Column(
@@ -53,10 +53,10 @@ class ProgressScreen extends StatelessWidget {
                     ],
                   ),
                 ),
-              ),
-            ),
-          );
-        },
+              );
+            },
+          ),
+        ),
       ),
     );
   }
@@ -69,7 +69,7 @@ class ProgressScreen extends StatelessWidget {
           'Progress',
           style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                 fontWeight: FontWeight.bold,
-                color: Theme.of(context).colorScheme.primary,
+                color: Colors.amber[300],
               ),
         ),
         IconButton(
@@ -109,13 +109,13 @@ class ProgressScreen extends StatelessWidget {
                       levelTitle,
                       style: Theme.of(context).textTheme.titleLarge?.copyWith(
                             fontWeight: FontWeight.bold,
-                            color: Theme.of(context).colorScheme.primary,
+                            color: Colors.amber[300],
                           ),
                     ),
                     Text(
                       'Level $currentLevel',
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            color: Theme.of(context).colorScheme.secondary,
+                            color: Colors.amber[300],
                           ),
                     ),
                   ],
@@ -123,13 +123,12 @@ class ProgressScreen extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color:
-                        Theme.of(context).colorScheme.primary.withOpacity(0.1),
+                    color: Colors.amber[100],
                     shape: BoxShape.circle,
                   ),
                   child: Icon(
                     Icons.star,
-                    color: Theme.of(context).colorScheme.primary,
+                    color: Colors.amber[700],
                     size: 32,
                   ),
                 ),
@@ -138,10 +137,9 @@ class ProgressScreen extends StatelessWidget {
             const SizedBox(height: 16),
             LinearProgressIndicator(
               value: progress,
-              backgroundColor:
-                  Theme.of(context).colorScheme.primary.withOpacity(0.1),
+              backgroundColor: Colors.amber[100],
               valueColor: AlwaysStoppedAnimation<Color>(
-                Theme.of(context).colorScheme.primary,
+                Colors.amber[700]!,
               ),
               minHeight: 8,
             ),
@@ -152,13 +150,13 @@ class ProgressScreen extends StatelessWidget {
                 Text(
                   '$xpToNextLevel XP to next level',
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: Theme.of(context).colorScheme.secondary,
+                        color: Colors.amber[300],
                       ),
                 ),
                 Text(
                   '${(progress * 100).round()}%',
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: Theme.of(context).colorScheme.primary,
+                        color: Colors.amber[700],
                         fontWeight: FontWeight.bold,
                       ),
                 ),
@@ -184,61 +182,62 @@ class ProgressScreen extends StatelessWidget {
           'Total XP',
           totalXP.toString(),
           Icons.star,
-          Theme.of(context).colorScheme.primary,
+          Colors.amber[300]!,
         ),
         _buildStatCard(
           context,
           'Today\'s XP',
           todayXP.toString(),
           Icons.today,
-          Theme.of(context).colorScheme.secondary,
+          Colors.amber[300]!,
         ),
         _buildStatCard(
           context,
           'Streak',
           '$streak days',
           Icons.local_fire_department,
-          Colors.orange,
+          Colors.amber[300]!,
         ),
       ],
     );
   }
 
-  Widget _buildStatCard(
-    BuildContext context,
-    String title,
-    String value,
-    IconData icon,
-    Color color,
-  ) {
+  Widget _buildStatCard(BuildContext context, String title, String value,
+      IconData icon, Color color) {
     return Card(
-      elevation: 2,
+      elevation: 4,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(12),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(
               icon,
               color: color,
-              size: 32,
+              size: 24,
             ),
-            const SizedBox(height: 8),
-            Text(
-              value,
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: color,
-                  ),
-            ),
+            const SizedBox(height: 4),
             Text(
               title,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.secondary,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: color,
                   ),
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 2),
+            Text(
+              value,
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    color: color,
+                    fontWeight: FontWeight.bold,
+                  ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
           ],
         ),
@@ -257,7 +256,7 @@ class ProgressScreen extends StatelessWidget {
             'Achievements',
             style: TextStyle(
               color: Colors.amber[300],
-              fontSize: 20,
+              fontSize: 18,
               fontWeight: FontWeight.bold,
             ),
           ),
@@ -268,7 +267,7 @@ class ProgressScreen extends StatelessWidget {
           padding: const EdgeInsets.all(16),
           gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: 2,
-            childAspectRatio: 1.5,
+            childAspectRatio: 1.2,
             crossAxisSpacing: 16,
             mainAxisSpacing: 16,
           ),
@@ -291,7 +290,12 @@ class ProgressScreen extends StatelessWidget {
                               color:
                                   isUnlocked ? Colors.amber[700] : Colors.grey),
                           const SizedBox(width: 8),
-                          Text(data['title'] as String),
+                          Expanded(
+                            child: Text(
+                              data['title'] as String,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
                         ],
                       ),
                       content: Column(
@@ -351,18 +355,21 @@ class ProgressScreen extends StatelessWidget {
                   children: [
                     Icon(
                       data['icon'] as IconData,
-                      size: 32,
+                      size: 24,
                       color: isUnlocked ? Colors.amber[700] : Colors.grey,
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 4),
                     Text(
                       data['title'] as String,
                       style: TextStyle(
                         color:
                             isUnlocked ? Colors.amber[900] : Colors.grey[600],
                         fontWeight: FontWeight.bold,
+                        fontSize: 12,
                       ),
                       textAlign: TextAlign.center,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ],
                 ),
@@ -442,13 +449,17 @@ class ProgressScreen extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Recent Tasks',
-          style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
+        Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Text(
+            'Recent Tasks',
+            style: TextStyle(
+              color: Colors.amber[300],
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
         ),
-        const SizedBox(height: 16),
         ListView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
@@ -456,37 +467,31 @@ class ProgressScreen extends StatelessWidget {
           itemBuilder: (context, index) {
             final task = recentTasks[index];
             return Card(
-              margin: const EdgeInsets.only(bottom: 8),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
+              margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
               child: ListTile(
-                leading: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: task.getDifficultyColor().withOpacity(0.1),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    task.getDifficultyIcon(),
-                    color: task.getDifficultyColor(),
-                  ),
+                leading: Icon(
+                  Icons.check_circle,
+                  color: Colors.amber[300],
+                  size: 24,
                 ),
                 title: Text(
                   task.title,
-                  style: const TextStyle(
+                  style: TextStyle(
                     decoration: TextDecoration.lineThrough,
+                    color: Colors.amber[300],
+                    fontSize: 14,
                   ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
                 subtitle: Text(
-                  '${task.xpEarned} XP',
+                  '${task.xpEarned} XP earned',
                   style: TextStyle(
-                    color: Theme.of(context).colorScheme.secondary,
+                    color: Colors.amber[300],
+                    fontSize: 12,
                   ),
-                ),
-                trailing: Text(
-                  '${task.completedAt?.day}/${task.completedAt?.month}/${task.completedAt?.year}',
-                  style: Theme.of(context).textTheme.bodySmall,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
             );
