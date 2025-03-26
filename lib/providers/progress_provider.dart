@@ -78,7 +78,7 @@ class ProgressProvider with ChangeNotifier {
       if (newLevel > _progress.level) {
         achievements.add(
           Achievement(
-            id: 'level_${newLevel}',
+            id: 'level_$newLevel',
             title: 'Level Up!',
             description: 'Reached level $newLevel',
             icon: '🎯',

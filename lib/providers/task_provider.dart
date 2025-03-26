@@ -1,19 +1,16 @@
-import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:dart_openai/dart_openai.dart';
 import '../models/task.dart';
-import '../config/openai_config.dart';
 import '../config/xp_config.dart';
 import 'package:uuid/uuid.dart';
 
-class TaskProvider with ChangeNotifier {
+class TaskProvider extends ChangeNotifier {
   static const int _maxTitleLength = 100;
   static const int _maxSubtasks = 10;
 
   List<Task> _tasks = [];
   late final SharedPreferences _prefs;
-  bool _isLoading = false;
+  final bool _isLoading = false;
   String? _error;
   final _uuid = const Uuid();
   DateTime? _lastTaskCompletionTime;
@@ -85,6 +82,8 @@ class TaskProvider with ChangeNotifier {
       final level = _prefs.getInt('currentLevel') ?? 1;
       final streak = _prefs.getInt('streak') ?? 0;
       final lastCompletionStr = _prefs.getString('lastCompletionDate');
+      final tasksCompletedInSession =
+          _prefs.getInt('tasksCompletedInSession') ?? 0;
 
       if (lastCompletionStr != null) {
         _lastCompletionDate = DateTime.parse(lastCompletionStr);
@@ -93,6 +92,7 @@ class TaskProvider with ChangeNotifier {
       _totalXP = xp;
       _currentLevel = level;
       _streak = streak;
+      _tasksCompletedInSession = tasksCompletedInSession;
 
       if (tasksJson != null) {
         _tasks = tasksJson
@@ -114,6 +114,7 @@ class TaskProvider with ChangeNotifier {
       await _prefs.setInt('totalXP', _totalXP);
       await _prefs.setInt('currentLevel', _currentLevel);
       await _prefs.setInt('streak', _streak);
+      await _prefs.setInt('tasksCompletedInSession', _tasksCompletedInSession);
       if (_lastCompletionDate != null) {
         await _prefs.setString(
             'lastCompletionDate', _lastCompletionDate!.toIso8601String());
@@ -136,136 +137,49 @@ class TaskProvider with ChangeNotifier {
     return true;
   }
 
-  Future<String> addTask(
-    String title, {
-    TaskDifficulty difficulty = TaskDifficulty.medium,
-    int duration = 15,
-    bool isRecurring = false,
-    String? category,
-  }) async {
-    final task = Task(
-      id: const Uuid().v4(),
-      title: title,
-      isCompleted: false,
-      subtasks: const [],
-      xpEarned: 0,
-      completedAt: null,
-      createdAt: DateTime.now(),
-      difficulty: difficulty,
-      estimatedDuration: duration,
-      isRecurring: isRecurring,
-      category: category,
-    );
-
+  void addTask(Task task) {
     _tasks.add(task);
-    await _saveTasks();
     notifyListeners();
-    return task.id;
   }
 
-  Future<void> addSubtasksToTask(
-      String taskId, List<String> subtaskTitles) async {
+  void deleteTask(String taskId) {
+    _tasks.removeWhere((task) => task.id == taskId);
+    notifyListeners();
+  }
+
+  void toggleTaskCompletion(String taskId) {
     final taskIndex = _tasks.indexWhere((task) => task.id == taskId);
-    if (taskIndex == -1) return;
-
-    final task = _tasks[taskIndex];
-    final subtasks = subtaskTitles
-        .map((title) => Task(
-              id: const Uuid().v4(),
-              title: title,
-              isCompleted: false,
-              subtasks: const [],
-              xpEarned: 0,
-              completedAt: null,
-              createdAt: DateTime.now(),
-              difficulty: task.difficulty,
-              estimatedDuration: task.estimatedDuration ~/ subtaskTitles.length,
-              isRecurring: task.isRecurring,
-              category: task.category,
-            ))
-        .toList();
-
-    _tasks[taskIndex] = task.copyWith(subtasks: subtasks);
-    await _saveTasks();
-    notifyListeners();
-  }
-
-  Future<void> toggleTaskCompletion(String taskId) async {
-    final taskIndex = _tasks.indexWhere((t) => t.id == taskId);
     if (taskIndex != -1) {
-      final task = _tasks[taskIndex];
-      final isCompleting = !task.isCompleted;
+      final previousState = _tasks[taskIndex].isCompleted;
+      _tasks[taskIndex].toggleCompletion();
 
-      if (isCompleting) {
-        _sessionCompletions++;
+      if (!previousState && _tasks[taskIndex].isCompleted) {
         _tasksCompletedInSession++;
-
-        // Calculate base XP from task difficulty and duration
-        int earnedXP = task.calculateBaseXP();
-
-        // Add XP for completed subtasks
-        if (task.subtasks.isNotEmpty) {
-          final completedSubtasks =
-              task.subtasks.where((st) => st.isCompleted).length;
-          final totalSubtasks = task.subtasks.length;
-
-          // Add XP for each completed subtask
-          earnedXP += completedSubtasks * SUBTASK_XP;
-
-          // Perfect completion bonus
-          if (completedSubtasks == totalSubtasks) {
-            earnedXP = (earnedXP * STREAK_MULTIPLIER).round();
-          }
-        }
-
-        // Update streak
-        final now = DateTime.now();
-        if (_lastCompletionDate != null) {
-          final difference = now.difference(_lastCompletionDate!).inDays;
-          if (difference == 1) {
-            _streak++;
-            // Apply streak multiplier
-            earnedXP =
-                (earnedXP * (1 + (_streak * DAILY_STREAK_MULTIPLIER))).round();
-          } else if (difference > 1) {
-            _streak = 1;
-          }
-        } else {
-          _streak = 1;
-        }
-        _lastCompletionDate = now;
-
-        // Apply same session multiplier if completing multiple tasks
-        if (_tasksCompletedInSession > 1) {
-          earnedXP =
-              (earnedXP * (1 + (_tasksCompletedInSession * 0.1))).round();
-        }
-
-        // Update task
-        _tasks[taskIndex] = task.copyWith(
-          isCompleted: true,
-          xpEarned: earnedXP,
-          completedAt: now,
-          subtasks: task.subtasks,
-        );
-
-        // Update total XP and level
-        _totalXP += earnedXP;
-        _updateLevel();
-      } else {
-        // Removing completion
-        _totalXP -= task.xpEarned;
-        _updateLevel();
-        _tasks[taskIndex] = task.copyWith(
-          isCompleted: false,
-          xpEarned: 0,
-          completedAt: null,
-          subtasks: task.subtasks,
-        );
+        _lastTaskCompletionTime = DateTime.now();
       }
 
-      await _saveTasks();
       notifyListeners();
+    }
+  }
+
+  void addXP(int amount) {
+    _totalXP += amount;
+    _updateLevel();
+    _saveTasks();
+    notifyListeners();
+  }
+
+  void toggleSubtaskCompletion(String taskId, String subtaskId) {
+    final taskIndex = _tasks.indexWhere((task) => task.id == taskId);
+    if (taskIndex != -1) {
+      final task = _tasks[taskIndex];
+      final subtaskIndex =
+          task.subtasks.indexWhere((subtask) => subtask.id == subtaskId);
+      if (subtaskIndex != -1) {
+        task.subtasks[subtaskIndex].isCompleted =
+            !task.subtasks[subtaskIndex].isCompleted;
+        notifyListeners();
+      }
     }
   }
 
@@ -344,31 +258,35 @@ class TaskProvider with ChangeNotifier {
   }
 
   bool _hasSevenDayStreak() {
-    final dates = _tasks
-        .where((task) => task.isCompleted && task.completedAt != null)
-        .map((task) => DateTime(task.completedAt!.year, task.completedAt!.month,
-            task.completedAt!.day))
-        .toSet()
-        .toList();
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
 
-    if (dates.isEmpty) return false;
+    if (_lastCompletionDate == null) return false;
 
-    dates.sort((a, b) => b.compareTo(a));
+    final lastCompletion = DateTime(
+      _lastCompletionDate!.year,
+      _lastCompletionDate!.month,
+      _lastCompletionDate!.day,
+    );
 
-    var currentDate = dates[0];
-    var streakDays = 1;
-
-    for (var i = 1; i < dates.length && streakDays < 7; i++) {
-      final expectedPreviousDay = currentDate.subtract(const Duration(days: 1));
-      if (dates[i] == expectedPreviousDay) {
-        streakDays++;
-        currentDate = dates[i];
-      } else if (dates[i].isBefore(expectedPreviousDay)) {
-        break;
-      }
+    // If the last completion was yesterday, increment streak
+    if (lastCompletion
+        .isAtSameMomentAs(today.subtract(const Duration(days: 1)))) {
+      _streak++;
+    }
+    // If the last completion was today, keep the streak
+    else if (lastCompletion.isAtSameMomentAs(today)) {
+      // Keep current streak
+    }
+    // If the last completion was more than 1 day ago, reset streak
+    else {
+      _streak = 1;
     }
 
-    return streakDays >= 7;
+    _lastCompletionDate = today;
+    _saveTasks();
+
+    return _streak >= 7;
   }
 
   int _getCompletedSubtasksCount() {
@@ -467,66 +385,31 @@ class TaskProvider with ChangeNotifier {
     return titles[(level - 1) % titles.length];
   }
 
-  Future<void> toggleSubtaskCompletion(String taskId, String subtaskId) async {
-    final taskIndex = _tasks.indexWhere((t) => t.id == taskId);
+  Future<void> addSubtasksToTask(
+      String taskId, List<String> subtaskTitles) async {
+    final taskIndex = _tasks.indexWhere((task) => task.id == taskId);
     if (taskIndex == -1) return;
 
     final task = _tasks[taskIndex];
-    final subtaskIndex = task.subtasks.indexWhere((st) => st.id == subtaskId);
-    if (subtaskIndex == -1) return;
+    final subtasks = subtaskTitles
+        .map((title) => Task(
+              id: const Uuid().v4(),
+              title: title,
+              isCompleted: false,
+              subtasks: const [],
+              xpEarned: 0,
+              completedAt: null,
+              createdAt: DateTime.now(),
+              estimatedDuration: task.estimatedDuration != null
+                  ? (task.estimatedDuration! ~/ subtaskTitles.length)
+                  : null,
+              isRecurring: task.isRecurring,
+              category: task.category,
+            ))
+        .toList();
 
-    final subtask = task.subtasks[subtaskIndex];
-    final isCompleting = !subtask.isCompleted;
-
-    if (isCompleting) {
-      _sessionCompletions++;
-      _tasksCompletedInSession++;
-
-      // Calculate XP for the subtask
-      int earnedXP = XPConfig.subtaskXP;
-
-      // Apply same session multiplier if completing multiple tasks
-      if (_tasksCompletedInSession > 1) {
-        earnedXP = (earnedXP * (1 + (_tasksCompletedInSession * 0.1))).round();
-      }
-
-      // Update subtask
-      final updatedSubtasks = List<Task>.from(task.subtasks);
-      updatedSubtasks[subtaskIndex] = subtask.copyWith(
-        isCompleted: true,
-        xpEarned: earnedXP,
-        completedAt: DateTime.now(),
-      );
-
-      // Update task
-      _tasks[taskIndex] = task.copyWith(subtasks: updatedSubtasks);
-
-      // Check if all subtasks are completed
-      if (updatedSubtasks.every((st) => st.isCompleted)) {
-        await toggleTaskCompletion(taskId);
-      }
-    } else {
-      // Uncompleting a subtask
-      final updatedSubtasks = List<Task>.from(task.subtasks);
-      updatedSubtasks[subtaskIndex] = subtask.copyWith(
-        isCompleted: false,
-        xpEarned: 0,
-        completedAt: null,
-      );
-
-      _tasks[taskIndex] = task.copyWith(subtasks: updatedSubtasks);
-    }
-
+    _tasks[taskIndex] = task.copyWith(subtasks: subtasks);
     await _saveTasks();
     notifyListeners();
-  }
-
-  Future<void> deleteTask(String taskId) async {
-    final taskIndex = _tasks.indexWhere((task) => task.id == taskId);
-    if (taskIndex != -1) {
-      _tasks.removeAt(taskIndex);
-      await _saveTasks();
-      notifyListeners();
-    }
   }
 }

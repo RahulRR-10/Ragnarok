@@ -12,13 +12,13 @@ enum TaskDifficulty {
 class Task {
   final String id;
   final String title;
-  final bool isCompleted;
+  bool isCompleted;
   final List<Task> subtasks;
-  final int xpEarned;
-  final DateTime? completedAt;
+  int xpEarned;
+  DateTime? completedAt;
   final DateTime createdAt;
   final TaskDifficulty difficulty;
-  final int estimatedDuration; // in minutes
+  final int? estimatedDuration;
   final bool isRecurring;
   final String? category;
 
@@ -45,21 +45,26 @@ class Task {
   Task({
     required this.id,
     required this.title,
-    required this.isCompleted,
-    required this.subtasks,
+    this.isCompleted = false,
+    this.subtasks = const [],
     this.xpEarned = 0,
     this.completedAt,
-    DateTime? createdAt,
-    this.difficulty = TaskDifficulty.medium,
-    this.estimatedDuration = 15,
+    required this.createdAt,
+    this.estimatedDuration,
     this.isRecurring = false,
     this.category,
+    this.difficulty = TaskDifficulty.medium,
   })  : assert(title.trim().isNotEmpty, 'Title cannot be empty'),
         assert(title.length <= maxTitleLength,
             'Title cannot exceed $maxTitleLength characters'),
         assert(subtasks.length <= maxSubtasks,
             'Cannot have more than $maxSubtasks subtasks'),
-        createdAt = createdAt ?? DateTime.now();
+        assert(
+            estimatedDuration == null ||
+                    (estimatedDuration! >= 5 && estimatedDuration! <= 120)
+                ? true
+                : false,
+            'Estimated duration must be between 5 and 120 minutes');
 
   Task copyWith({
     String? id,
@@ -122,7 +127,7 @@ class Task {
         (e) => e.toString() == json['difficulty'],
         orElse: () => TaskDifficulty.medium,
       ),
-      estimatedDuration: json['estimatedDuration'] as int? ?? 15,
+      estimatedDuration: json['estimatedDuration'] as int?,
       isRecurring: json['isRecurring'] as bool? ?? false,
       category: json['category'] as String?,
     );
@@ -143,16 +148,20 @@ class Task {
 
   // Calculate base XP for this task
   int calculateBaseXP() {
-    // Find the closest duration base XP
-    final baseXP = durationBaseXP.entries
-        .reduce((a, b) => (a.key - estimatedDuration).abs() <
-                (b.key - estimatedDuration).abs()
-            ? a
-            : b)
-        .value;
+    if (subtasks.isEmpty) {
+      // Random XP between 100-200 for tasks without subtasks
+      return 100 + (DateTime.now().millisecondsSinceEpoch % 101);
+    }
 
-    // Apply difficulty multiplier
-    return (baseXP * difficultyMultipliers[difficulty]!).round();
+    // Check if all subtasks are completed
+    final allSubtasksCompleted =
+        subtasks.every((subtask) => subtask.isCompleted);
+    if (!allSubtasksCompleted) {
+      return 0; // Return 0 if not all subtasks are completed
+    }
+
+    // Base XP for completing a task with all subtasks completed
+    return 100;
   }
 
   // Get task color based on difficulty
@@ -180,6 +189,17 @@ class Task {
         return Icons.star_border;
       case TaskDifficulty.epic:
         return Icons.auto_awesome;
+    }
+  }
+
+  void toggleCompletion() {
+    isCompleted = !isCompleted;
+    if (isCompleted) {
+      completedAt = DateTime.now();
+      xpEarned = calculateBaseXP();
+    } else {
+      completedAt = null;
+      xpEarned = 0;
     }
   }
 }

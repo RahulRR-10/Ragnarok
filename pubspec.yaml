@@ -1,5 +1,5 @@
 name: adhd_task_manager
-description: A task manager app designed for people with ADHD.
+description: A task manager app for people with ADHD.
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: "none" # Remove this line if you wish to publish to pub.dev
@@ -19,7 +19,7 @@ publish_to: "none" # Remove this line if you wish to publish to pub.dev
 version: 1.0.0+1
 
 environment:
-  sdk: ">=3.1.0 <4.0.0"
+  sdk: ">=3.0.0 <4.0.0"
 
 # Dependencies specify other packages that your package needs in order to work.
 # To automatically upgrade your package dependencies to the latest versions
@@ -30,7 +30,6 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  
 
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
@@ -49,7 +48,7 @@ dependencies:
   dart_openai: ^5.1.0
 
   # Audio
-  just_audio: ^0.9.34
+  just_audio: ^0.9.36
   audio_session: ^0.1.18
 
   # Storage
@@ -63,7 +62,8 @@ dependencies:
   flutter_local_notifications: ^16.1.0
   azure: ^0.0.2
   http: ^1.1.0
-  animate_do: ^4.2.0
+  animate_do: ^3.0.2
+  font_awesome_flutter: ^10.6.0
 
 dev_dependencies:
   flutter_test:
@@ -87,7 +87,8 @@ flutter:
   uses-material-design: true
 
   assets:
-    - assets/audio/white-noise.mp3
+    - assets/audio/
+    - assets/images/
 
   # To add assets to your application, add an assets section, like this:
   # assets:

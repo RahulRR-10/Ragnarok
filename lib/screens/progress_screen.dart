@@ -2,58 +2,62 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/task_provider.dart';
 import '../models/task.dart';
+import 'main_screen.dart';
 
 class ProgressScreen extends StatelessWidget {
   const ProgressScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<TaskProvider>(
-      builder: (context, taskProvider, child) {
-        final totalXP = taskProvider.totalXP;
-        final currentLevel = taskProvider.currentLevel;
-        final levelTitle = taskProvider.getLevelTitle(currentLevel);
-        final levelProgress = taskProvider.getLevelProgress();
-        final xpToNextLevel = taskProvider.getXPToNextLevel();
-        final todayXP = taskProvider.getTodayXP();
-        final achievements = taskProvider.checkAchievements();
+    return NavigationWrapper(
+      initialIndex: 2,
+      child: Consumer<TaskProvider>(
+        builder: (context, taskProvider, child) {
+          final totalXP = taskProvider.totalXP;
+          final currentLevel = taskProvider.currentLevel;
+          final levelTitle = taskProvider.getLevelTitle(currentLevel);
+          final levelProgress = taskProvider.getLevelProgress();
+          final xpToNextLevel = taskProvider.getXPToNextLevel();
+          final todayXP = taskProvider.getTodayXP();
+          final achievements = taskProvider.checkAchievements();
 
-        return Scaffold(
-          body: Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  Theme.of(context).colorScheme.primary.withOpacity(0.1),
-                  Theme.of(context).colorScheme.secondary.withOpacity(0.1),
-                ],
-              ),
-            ),
-            child: SafeArea(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildHeader(context),
-                    const SizedBox(height: 24),
-                    _buildLevelCard(context, levelTitle, currentLevel,
-                        levelProgress, xpToNextLevel),
-                    const SizedBox(height: 24),
-                    _buildStatsGrid(
-                        context, totalXP, todayXP, taskProvider.streak),
-                    const SizedBox(height: 24),
-                    _buildAchievementsSection(context, achievements),
-                    const SizedBox(height: 24),
-                    _buildRecentTasks(context, taskProvider.tasks),
+          return Scaffold(
+            body: Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    Theme.of(context).colorScheme.primary.withOpacity(0.1),
+                    Theme.of(context).colorScheme.secondary.withOpacity(0.1),
                   ],
                 ),
               ),
+              child: SafeArea(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildHeader(context),
+                      const SizedBox(height: 24),
+                      _buildLevelCard(context, levelTitle, currentLevel,
+                          levelProgress, xpToNextLevel),
+                      const SizedBox(height: 24),
+                      _buildStatsGrid(
+                          context, totalXP, todayXP, taskProvider.streak),
+                      const SizedBox(height: 24),
+                      _buildAchievements(context, achievements),
+                      const SizedBox(height: 24),
+                      _buildRecentTasks(context, taskProvider.tasks),
+                    ],
+                  ),
+                ),
+              ),
             ),
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
 
@@ -242,91 +246,131 @@ class ProgressScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildAchievementsSection(
+  Widget _buildAchievements(
       BuildContext context, Map<String, bool> achievements) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Achievements',
-          style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
+        Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Text(
+            'Achievements',
+            style: TextStyle(
+              color: Colors.amber[300],
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
         ),
-        const SizedBox(height: 16),
-        GridView.count(
+        GridView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
-          crossAxisCount: 2,
-          mainAxisSpacing: 16,
-          crossAxisSpacing: 16,
-          children: achievements.entries.map((entry) {
-            return _buildAchievementCard(
-              context,
-              entry.key,
-              entry.value,
+          padding: const EdgeInsets.all(16),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+            childAspectRatio: 1.5,
+            crossAxisSpacing: 16,
+            mainAxisSpacing: 16,
+          ),
+          itemCount: achievements.length,
+          itemBuilder: (context, index) {
+            final achievement = achievements.keys.elementAt(index);
+            final isUnlocked = achievements[achievement]!;
+            final data = _getAchievementData(achievement);
+
+            return Card(
+              color: isUnlocked ? Colors.amber[100] : Colors.grey[800],
+              child: InkWell(
+                onTap: () {
+                  showDialog(
+                    context: context,
+                    builder: (context) => AlertDialog(
+                      title: Row(
+                        children: [
+                          Icon(data['icon'] as IconData,
+                              color:
+                                  isUnlocked ? Colors.amber[700] : Colors.grey),
+                          const SizedBox(width: 8),
+                          Text(data['title'] as String),
+                        ],
+                      ),
+                      content: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            isUnlocked
+                                ? 'Congratulations! You\'ve unlocked this achievement!'
+                                : 'Keep working to unlock this achievement.',
+                            style: TextStyle(
+                              color: isUnlocked
+                                  ? Colors.amber[900]
+                                  : Colors.grey[600],
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.grey[700],
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.info_outline,
+                                  color: Colors.amber[300],
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    data['unlockCondition'] as String,
+                                    style: TextStyle(
+                                      color: Colors.amber[300],
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context),
+                          child: const Text('Close'),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      data['icon'] as IconData,
+                      size: 32,
+                      color: isUnlocked ? Colors.amber[700] : Colors.grey,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      data['title'] as String,
+                      style: TextStyle(
+                        color:
+                            isUnlocked ? Colors.amber[900] : Colors.grey[600],
+                        fontWeight: FontWeight.bold,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              ),
             );
-          }).toList(),
+          },
         ),
       ],
-    );
-  }
-
-  Widget _buildAchievementCard(
-    BuildContext context,
-    String achievement,
-    bool isUnlocked,
-  ) {
-    final achievementData = _getAchievementData(achievement);
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: isUnlocked
-                ? [
-                    Theme.of(context).colorScheme.primary.withOpacity(0.1),
-                    Theme.of(context).colorScheme.secondary.withOpacity(0.1),
-                  ]
-                : [
-                    Colors.grey.withOpacity(0.1),
-                    Colors.grey.withOpacity(0.05),
-                  ],
-          ),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                achievementData['icon'] as IconData,
-                color: isUnlocked
-                    ? Theme.of(context).colorScheme.primary
-                    : Colors.grey,
-                size: 32,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                achievementData['title'] as String,
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: isUnlocked
-                          ? Theme.of(context).colorScheme.primary
-                          : Colors.grey,
-                    ),
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 
@@ -336,46 +380,57 @@ class ProgressScreen extends StatelessWidget {
         return {
           'icon': Icons.check_circle,
           'title': 'First Task',
+          'unlockCondition': 'Unlocks after completing 1 task',
         };
       case 'streak_master':
         return {
           'icon': Icons.local_fire_department,
           'title': 'Streak Master',
+          'unlockCondition': 'Unlocks after maintaining a 7-day streak',
         };
       case 'subtask_star':
         return {
           'icon': Icons.star,
           'title': 'Subtask Star',
+          'unlockCondition': 'Unlocks after completing 10 subtasks',
         };
       case 'ai_friend':
         return {
           'icon': Icons.psychology,
           'title': 'AI Friend',
+          'unlockCondition': 'Unlocks after using AI breakdown on 5 tasks',
         };
       case 'speed_demon':
         return {
           'icon': Icons.speed,
           'title': 'Speed Demon',
+          'unlockCondition':
+              'Unlocks after completing 3 tasks in the same session',
         };
       case 'task_master':
         return {
           'icon': Icons.emoji_events,
           'title': 'Task Master',
+          'unlockCondition': 'Unlocks after completing 50 total tasks',
         };
       case 'epic_warrior':
         return {
           'icon': Icons.auto_awesome,
           'title': 'Epic Warrior',
+          'unlockCondition':
+              'Unlocks after completing 10 epic difficulty tasks',
         };
       case 'daily_champion':
         return {
           'icon': Icons.celebration,
           'title': 'Daily Champion',
+          'unlockCondition': 'Unlocks after completing 5 tasks in a single day',
         };
       default:
         return {
           'icon': Icons.help,
           'title': 'Unknown',
+          'unlockCondition': 'Unknown unlock condition',
         };
     }
   }
@@ -388,7 +443,7 @@ class ProgressScreen extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Recent Achievements',
+          'Recent Tasks',
           style: Theme.of(context).textTheme.titleLarge?.copyWith(
                 fontWeight: FontWeight.bold,
               ),
@@ -424,7 +479,7 @@ class ProgressScreen extends StatelessWidget {
                   ),
                 ),
                 subtitle: Text(
-                  '${task.xpEarned} XP • ${task.difficulty.name.toUpperCase()}',
+                  '${task.xpEarned} XP',
                   style: TextStyle(
                     color: Theme.of(context).colorScheme.secondary,
                   ),
