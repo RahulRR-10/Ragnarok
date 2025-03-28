@@ -1,4 +1,4 @@
- import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -10,6 +10,7 @@ import 'screens/focus_mode_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/progress_screen.dart';
 import 'screens/task_list_screen.dart';
+import 'screens/login_screen.dart'; // Add this import
 
 // Providers
 import 'providers/task_provider.dart';
@@ -82,8 +83,10 @@ class MyApp extends StatelessWidget {
           ),
           useMaterial3: true,
         ),
-        home: const MainScreen(),
+        home: const LoginScreen(), // Change home to LoginScreen
         routes: {
+          '/login': (context) => const LoginScreen(), // Add login route
+          '/main': (context) => const MainScreen(), // Add main route
           '/tasks': (context) => const TaskListScreen(),
           '/focus': (context) => const FocusModeScreen(),
           '/settings': (context) => const SettingsScreen(),
