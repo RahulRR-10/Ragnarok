@@ -1,0 +1,7 @@
+[33m35f711a[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32manything[m[33m, [m[1;31morigin/anything[m[33m)[m HEAD@{0}: pull --rebase origin anything (finish): returning to refs/heads/anything
+[33m35f711a[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32manything[m[33m, [m[1;31morigin/anything[m[33m)[m HEAD@{1}: pull --rebase origin anything (pick): fixed home screen
+[33m951654c[m HEAD@{2}: pull --rebase origin anything (start): checkout 951654c19e21a054c711cc8cb80a0f9534c3b843
+[33m556c633[m HEAD@{3}: commit: d
+[33m6494e43[m HEAD@{4}: commit: fixed home screen
+[33m496124f[m HEAD@{5}: commit: v3
+[33ma48e826[m HEAD@{6}: clone: from https://github.com/RahulRR-10/Ragnarok.git
