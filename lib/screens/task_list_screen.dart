@@ -1,17 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/task_provider.dart';
-import '../providers/settings_provider.dart';
-import '../widgets/task_card.dart';
-import '../widgets/add_task_dialog.dart';
-import '../config/openai_config.dart';
+import '../config/gemini_config.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import '../config/xp_config.dart';
 import '../models/task.dart';
 import 'package:uuid/uuid.dart';
-import 'progress_screen.dart';
 import 'main_screen.dart';
+import 'focus_screen.dart';
+import 'package:confetti/confetti.dart';
+import 'dart:math';
 
 class TaskListScreen extends StatefulWidget {
   const TaskListScreen({super.key});
@@ -21,97 +19,162 @@ class TaskListScreen extends StatefulWidget {
 }
 
 class _TaskListScreenState extends State<TaskListScreen> {
-  Future<(List<Task>, TaskDifficulty)> _getAIBreakdown(Task task) async {
+  late ConfettiController _confettiController;
+  bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _confettiController =
+        ConfettiController(duration: const Duration(seconds: 2));
+  }
+
+  @override
+  void dispose() {
+    _confettiController.dispose();
+    super.dispose();
+  }
+
+  void _showCompletionPopup(Task task) {
+    _confettiController.play();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.star, color: Colors.amber),
+            const SizedBox(width: 8),
+            Text(
+              'Well done! +${task.xpEarned} XP',
+              style: const TextStyle(color: Colors.white),
+            ),
+          ],
+        ),
+        backgroundColor: Colors.deepPurple.shade400,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        margin: const EdgeInsets.all(8),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  Future<(List<Task>, TaskDifficulty, int)> _getAIBreakdown(Task task) async {
     try {
       final response = await http.post(
-        Uri.parse(
-            '${OpenAIConfig.endpoint}openai/deployments/${OpenAIConfig.deploymentName}/chat/completions?api-version=2024-02-15-preview'),
+        Uri.parse('${GeminiConfig.endpoint}?key=${GeminiConfig.apiKey}'),
         headers: {
           'Content-Type': 'application/json',
-          'api-key': OpenAIConfig.apiKey,
         },
         body: jsonEncode({
-          'messages': [
+          'contents': [
             {
-              'role': 'system',
-              'content':
-                  '''You are a helpful assistant that analyzes tasks and provides:
-1. A difficulty level (easy, medium, hard, or epic) based on complexity, time required, and mental effort
-2. 2-3 simple, manageable steps for people with ADHD
-Keep each step very short, under 50 characters.'''
-            },
-            {
-              'role': 'user',
-              'content':
-                  'Analyze this task and provide difficulty level and steps: ${task.title}'
+              'parts': [
+                {
+                  'text':
+                      '''Analyze this task and provide a response in this exact format:
+
+DIFFICULTY: [easy/medium/hard/epic]
+XP: [number between 10-100]
+STEPS:
+1. [First step]
+2. [Second step]
+3. [Third step]
+
+Task to analyze: ${task.title}'''
+                }
+              ]
             }
           ],
-          'max_tokens': 150,
-          'temperature': 0.7,
+          'generationConfig': {
+            'temperature': 0.7,
+            'maxOutputTokens': 150,
+          },
         }),
       );
 
       if (response.statusCode == 429) {
-        debugPrint('Rate limited by Azure OpenAI');
-        return (<Task>[], TaskDifficulty.medium);
+        debugPrint('Rate limited by Gemini AI');
+        return (<Task>[], TaskDifficulty.medium, 20);
       }
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        final content = data['choices'][0]['message']['content'] as String;
+        final content =
+            data['candidates'][0]['content']['parts'][0]['text'] as String;
 
-        // Extract difficulty level
+        final difficultyMatch =
+            RegExp(r'DIFFICULTY:\s*(\w+)').firstMatch(content);
         TaskDifficulty difficulty = TaskDifficulty.medium;
-        if (content.toLowerCase().contains('easy')) {
-          difficulty = TaskDifficulty.easy;
-        } else if (content.toLowerCase().contains('hard')) {
-          difficulty = TaskDifficulty.hard;
-        } else if (content.toLowerCase().contains('epic')) {
-          difficulty = TaskDifficulty.epic;
+
+        if (difficultyMatch != null) {
+          final difficultyStr = difficultyMatch.group(1)?.toLowerCase() ?? '';
+          switch (difficultyStr) {
+            case 'easy':
+              difficulty = TaskDifficulty.easy;
+              break;
+            case 'hard':
+              difficulty = TaskDifficulty.hard;
+              break;
+            case 'epic':
+              difficulty = TaskDifficulty.epic;
+              break;
+          }
         }
 
-        // Extract steps
-        final steps = content
-            .split('\n')
-            .where((step) => step.trim().isNotEmpty)
-            .map((step) {
-              final cleanStep =
-                  step.replaceAll(RegExp(r'^\d+\.\s*'), '').trim();
-              return cleanStep.length > 90
-                  ? '${cleanStep.substring(0, 90)}...'
-                  : cleanStep;
-            })
-            .where((step) => !step.toLowerCase().contains('difficulty'))
-            .take(3)
-            .toList();
+        final xpMatch = RegExp(r'XP:\s*(\d+)').firstMatch(content);
+        int xp = 20;
+        if (xpMatch != null) {
+          xp = int.tryParse(xpMatch.group(1) ?? '20') ?? 20;
+        }
+
+        final steps = RegExp(r'STEPS:\s*((?:\d+\.\s*[^\n]+\n?)+)')
+                .firstMatch(content)
+                ?.group(1)
+                ?.split('\n')
+                .where((step) => step.trim().isNotEmpty)
+                .map((step) {
+                  final cleanStep =
+                      step.replaceAll(RegExp(r'^\d+\.\s*'), '').trim();
+                  return cleanStep.length > 90
+                      ? '${cleanStep.substring(0, 90)}...'
+                      : cleanStep;
+                })
+                .where((step) => step.isNotEmpty)
+                .take(3)
+                .toList() ??
+            [];
 
         if (steps.isEmpty) {
+          debugPrint('No steps found in AI response');
           return (
             [
               Task(
-                id: DateTime.now().millisecondsSinceEpoch.toString(),
+                id: const Uuid().v4(),
                 title: task.title.length > 90
                     ? '${task.title.substring(0, 90)}...'
                     : task.title,
                 isCompleted: false,
                 subtasks: const [],
-                xpEarned: 0,
+                xpEarned: xp,
                 completedAt: null,
                 createdAt: DateTime.now(),
                 estimatedDuration: null,
                 isRecurring: false,
                 category: null,
                 difficulty: difficulty,
+                isUrgent: task.isUrgent,
               )
             ],
-            difficulty
+            difficulty,
+            xp
           );
         }
 
         return (
           steps
               .map((step) => Task(
-                    id: '${DateTime.now().millisecondsSinceEpoch}_${steps.indexOf(step)}',
+                    id: const Uuid().v4(),
                     title: step,
                     isCompleted: false,
                     subtasks: const [],
@@ -122,25 +185,26 @@ Keep each step very short, under 50 characters.'''
                     isRecurring: false,
                     category: null,
                     difficulty: difficulty,
+                    isUrgent: false,
                   ))
               .toList(),
-          difficulty
+          difficulty,
+          xp
         );
       }
 
-      debugPrint(
-          'Azure OpenAI error: ${response.statusCode} - ${response.body}');
-      return (<Task>[], TaskDifficulty.medium);
+      debugPrint('Gemini AI error: ${response.statusCode} - ${response.body}');
+      return (<Task>[], TaskDifficulty.medium, 20);
     } catch (e) {
       debugPrint('Error getting AI breakdown: $e');
-      return (<Task>[], TaskDifficulty.medium);
+      return (<Task>[], TaskDifficulty.medium, 20);
     }
   }
 
   Future<void> _showAddTaskDialog() async {
     final titleController = TextEditingController();
-    final descriptionController = TextEditingController();
     bool useAIBreakdown = false;
+    bool isUrgent = false;
 
     await showDialog(
       context: context,
@@ -160,22 +224,24 @@ Keep each step very short, under 50 characters.'''
                   maxLength: 50,
                 ),
                 const SizedBox(height: 16),
-                TextField(
-                  controller: descriptionController,
-                  decoration: const InputDecoration(
-                    labelText: 'Description (Optional)',
-                    border: OutlineInputBorder(),
-                  ),
-                  maxLines: 3,
-                ),
-                const SizedBox(height: 16),
                 CheckboxListTile(
                   title: const Text('Use AI to analyze task'),
-                  subtitle: const Text('Get difficulty level and subtasks'),
+                  subtitle:
+                      const Text('Get difficulty level, XP, and subtasks'),
                   value: useAIBreakdown,
                   onChanged: (value) {
                     setState(() {
                       useAIBreakdown = value ?? false;
+                    });
+                  },
+                ),
+                CheckboxListTile(
+                  title: const Text('High Priority'),
+                  subtitle: const Text('Mark this task as high priority'),
+                  value: isUrgent,
+                  onChanged: (value) {
+                    setState(() {
+                      isUrgent = value ?? false;
                     });
                   },
                 ),
@@ -190,98 +256,71 @@ Keep each step very short, under 50 characters.'''
             ElevatedButton(
               onPressed: () async {
                 if (titleController.text.isNotEmpty) {
+                  setState(() {
+                    _isLoading = true;
+                  });
+
                   final task = Task(
                     id: const Uuid().v4(),
                     title: titleController.text,
                     isCompleted: false,
                     subtasks: const [],
-                    xpEarned: 0,
+                    xpEarned: useAIBreakdown ? 0 : 50,
                     completedAt: null,
                     createdAt: DateTime.now(),
                     estimatedDuration: null,
                     isRecurring: false,
                     category: null,
                     difficulty: TaskDifficulty.medium,
+                    isUrgent: isUrgent,
                   );
                   context.read<TaskProvider>().addTask(task);
 
                   if (useAIBreakdown) {
-                    // Show loading dialog
-                    showDialog(
-                      context: context,
-                      barrierDismissible: false,
-                      builder: (context) => const AlertDialog(
-                        content: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            CircularProgressIndicator(),
-                            SizedBox(height: 16),
-                            Text('Analyzing task...'),
-                          ],
-                        ),
-                      ),
-                    );
+                    final (subtasks, difficulty, xp) =
+                        await _getAIBreakdown(task);
 
-                    // Get AI breakdown
-                    final (subtasks, difficulty) = await _getAIBreakdown(task);
-
-                    // Close loading dialog
-                    Navigator.pop(context);
-
-                    // Update task difficulty
                     context
                         .read<TaskProvider>()
                         .updateTaskDifficulty(task.id, difficulty);
+                    context.read<TaskProvider>().updateTaskXP(task.id, xp);
 
                     if (subtasks.isNotEmpty) {
-                      // Show confirmation dialog
-                      final shouldProceed = await showDialog<bool>(
-                        context: context,
-                        builder: (context) => AlertDialog(
-                          title: const Text('Task Analysis'),
-                          content: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                  'Difficulty: ${difficulty.name.toUpperCase()}'),
-                              const SizedBox(height: 16),
-                              const Text('Generated subtasks:'),
-                              const SizedBox(height: 8),
-                              ...subtasks.map((subtask) => Padding(
-                                    padding:
-                                        const EdgeInsets.symmetric(vertical: 4),
-                                    child: Text('• ${subtask.title}'),
-                                  )),
-                            ],
-                          ),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(context, false),
-                              child: const Text('Cancel'),
-                            ),
-                            ElevatedButton(
-                              onPressed: () => Navigator.pop(context, true),
-                              child: const Text('Use These Subtasks'),
-                            ),
-                          ],
-                        ),
-                      );
-
-                      if (shouldProceed == true) {
-                        // Add subtasks to the task
-                        await context.read<TaskProvider>().addSubtasksToTask(
-                              task.id,
-                              subtasks.map((task) => task.title).toList(),
-                            );
-                      }
+                      await context.read<TaskProvider>().addSubtasksToTask(
+                            task.id,
+                            subtasks.map((task) => task.title).toList(),
+                          );
                     }
                   }
 
+                  setState(() {
+                    _isLoading = false;
+                  });
                   Navigator.pop(context);
                 }
               },
-              child: const Text('Add Task'),
+              child: _isLoading
+                  ? Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor:
+                                AlwaysStoppedAnimation<Color>(Colors.white),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Icon(
+                          Icons.emoji_nature,
+                          size: 20,
+                          color: Colors.amber[300],
+                        ),
+                      ],
+                    )
+                  : const Text('Add Task'),
             ),
           ],
         ),
@@ -293,61 +332,78 @@ Keep each step very short, under 50 characters.'''
   Widget build(BuildContext context) {
     return NavigationWrapper(
       initialIndex: 0,
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('Tasks'),
-          backgroundColor: Colors.deepPurple.shade800,
-          foregroundColor: Colors.white,
-          elevation: 0,
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.settings),
-              onPressed: () {
-                // TODO: Navigate to settings screen
-              },
+      child: Stack(
+        children: [
+          Scaffold(
+            appBar: AppBar(
+              title: const Text('Tasks'),
+              backgroundColor: Colors.deepPurple,
+              foregroundColor: Colors.white,
+              elevation: 0,
+              actions: [
+                IconButton(
+                  icon: const Icon(Icons.settings),
+                  onPressed: () {
+                    // TODO: Navigate to settings screen
+                  },
+                ),
+              ],
             ),
-          ],
-        ),
-        body: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                Colors.deepPurple.shade300,
-                Colors.deepPurple.shade600,
+            body: Container(
+              decoration: const BoxDecoration(
+                color: Colors.deepPurple,
+              ),
+              child: Consumer<TaskProvider>(
+                builder: (context, taskProvider, child) {
+                  if (taskProvider.tasks.isEmpty) {
+                    return Center(
+                      child: Text(
+                        'No tasks yet. Add one to get started!',
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.8),
+                          fontSize: 16,
+                        ),
+                      ),
+                    );
+                  }
+
+                  return ListView.builder(
+                    padding: const EdgeInsets.all(16),
+                    itemCount: taskProvider.tasks.length,
+                    itemBuilder: (context, index) {
+                      final task = taskProvider.tasks[index];
+                      return _buildTaskItem(task);
+                    },
+                  );
+                },
+              ),
+            ),
+            floatingActionButton: FloatingActionButton(
+              onPressed: _showAddTaskDialog,
+              backgroundColor: Colors.amber[300],
+              child: const Icon(Icons.add, color: Colors.black),
+            ),
+          ),
+          Align(
+            alignment: Alignment.topCenter,
+            child: ConfettiWidget(
+              confettiController: _confettiController,
+              blastDirection: pi / 2,
+              maxBlastForce: 5,
+              minBlastForce: 2,
+              emissionFrequency: 0.05,
+              numberOfParticles: 20,
+              gravity: 0.1,
+              shouldLoop: false,
+              colors: const [
+                Colors.amber,
+                Colors.purple,
+                Colors.blue,
+                Colors.pink,
               ],
             ),
           ),
-          child: Consumer<TaskProvider>(
-            builder: (context, taskProvider, child) {
-              if (taskProvider.tasks.isEmpty) {
-                return Center(
-                  child: Text(
-                    'No tasks yet. Add one to get started!',
-                    style: TextStyle(
-                      color: Colors.amber[300],
-                      fontSize: 16,
-                    ),
-                  ),
-                );
-              }
-
-              return ListView.builder(
-                itemCount: taskProvider.tasks.length,
-                itemBuilder: (context, index) {
-                  final task = taskProvider.tasks[index];
-                  return _buildTaskItem(task);
-                },
-              );
-            },
-          ),
-        ),
-        floatingActionButton: FloatingActionButton(
-          onPressed: _showAddTaskDialog,
-          backgroundColor: Colors.amber[300],
-          child: const Icon(Icons.add, color: Colors.black),
-        ),
+        ],
       ),
     );
   }
@@ -355,146 +411,239 @@ Keep each step very short, under 50 characters.'''
   Widget _buildTaskItem(Task task) {
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Theme(
-        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-        child: ExpansionTile(
-          leading: Checkbox(
-            value: task.isCompleted,
-            onChanged: (value) {
-              context.read<TaskProvider>().toggleTaskCompletion(task.id);
-            },
-          ),
-          title: Text(
-            task.title,
-            style: TextStyle(
-              decoration: task.isCompleted ? TextDecoration.lineThrough : null,
-              color: task.isCompleted ? Colors.grey : null,
+      color: Colors.deepPurple.shade50,
+      child: InkWell(
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => FocusScreen(task: task),
             ),
-          ),
-          subtitle: Column(
+          ).then((completed) {
+            if (completed == true) {
+              setState(() {}); // Force UI update
+              final taskProvider = context.read<TaskProvider>();
+              final updatedTask =
+                  taskProvider.tasks.firstWhere((t) => t.id == task.id);
+              if (updatedTask.isCompleted) {
+                _showCompletionPopup(updatedTask);
+              }
+            }
+          });
+        },
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (task.subtasks.isNotEmpty) ...[
-                const SizedBox(height: 4),
-                Text(
-                  '${task.subtasks.length} subtasks',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              ],
-              const SizedBox(height: 4),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: _getDifficultyColor(task.difficulty).withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  task.difficulty.name.toUpperCase(),
-                  style: TextStyle(
+              Row(
+                children: [
+                  Icon(
+                    _getDifficultyIcon(task.difficulty),
+                    size: 16,
                     color: _getDifficultyColor(task.difficulty),
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
                   ),
-                ),
-              ),
-            ],
-          ),
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (task.isCompleted && task.xpEarned > 0)
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.amber[100],
-                    borderRadius: BorderRadius.circular(12),
+                  const SizedBox(width: 8),
+                  Text(
+                    task.difficulty.name.toUpperCase(),
+                    style: TextStyle(
+                      color: _getDifficultyColor(task.difficulty),
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.star, size: 16, color: Colors.amber[700]),
-                      const SizedBox(width: 4),
-                      Text(
-                        '${task.xpEarned} XP',
-                        style: TextStyle(
-                          color: Colors.amber[900],
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              IconButton(
-                icon: const Icon(Icons.delete),
-                onPressed: () async {
-                  final shouldDelete = await showDialog<bool>(
-                    context: context,
-                    builder: (context) => AlertDialog(
-                      title: const Text('Delete Task'),
-                      content: Text(
-                          'Are you sure you want to delete "${task.title}"?'),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(context, false),
-                          child: const Text('Cancel'),
-                        ),
-                        ElevatedButton(
-                          onPressed: () => Navigator.pop(context, true),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.red,
-                            foregroundColor: Colors.white,
+                  const SizedBox(width: 8),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.amber[100],
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.star, size: 16, color: Colors.amber[700]),
+                        const SizedBox(width: 4),
+                        Text(
+                          '${task.xpEarned} XP',
+                          style: TextStyle(
+                            color: Colors.amber[900],
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
                           ),
-                          child: const Text('Delete'),
                         ),
                       ],
                     ),
-                  );
-
-                  if (shouldDelete == true) {
-                    context.read<TaskProvider>().deleteTask(task.id);
-                  }
-                },
-              ),
-              if (task.subtasks.isNotEmpty) const Icon(Icons.expand_more),
-            ],
-          ),
-          children: [
-            if (task.subtasks.isNotEmpty)
-              ListView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: task.subtasks.length,
-                itemBuilder: (context, index) {
-                  final subtask = task.subtasks[index];
-                  return ListTile(
-                    contentPadding: const EdgeInsets.only(left: 72, right: 16),
-                    leading: Checkbox(
-                      value: subtask.isCompleted,
-                      onChanged: (value) {
-                        context.read<TaskProvider>().toggleSubtaskCompletion(
-                              task.id,
-                              subtask.id,
-                            );
-                      },
-                    ),
-                    title: Text(
-                      subtask.title,
-                      style: TextStyle(
-                        decoration: subtask.isCompleted
-                            ? TextDecoration.lineThrough
-                            : null,
-                        color: subtask.isCompleted ? Colors.grey : null,
+                  ),
+                  if (task.isUrgent) ...[
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.amber[100],
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.warning_amber,
+                              size: 16, color: Colors.amber[700]),
+                          const SizedBox(width: 4),
+                          Text(
+                            'HIGH PRIORITY',
+                            style: TextStyle(
+                              color: Colors.amber[900],
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                  );
-                },
+                  ],
+                ],
               ),
-          ],
+              const SizedBox(height: 8),
+              Text(
+                task.title,
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.deepPurple.shade900,
+                  decoration:
+                      task.isCompleted ? TextDecoration.lineThrough : null,
+                  decorationColor: Colors.deepPurple.shade900,
+                  decorationThickness: 2,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  _buildActionButton(
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => FocusScreen(task: task),
+                        ),
+                      ).then((completed) {
+                        if (completed == true) {
+                          setState(() {}); // Force UI update
+                          final taskProvider = context.read<TaskProvider>();
+                          final updatedTask = taskProvider.tasks
+                              .firstWhere((t) => t.id == task.id);
+                          if (updatedTask.isCompleted) {
+                            _showCompletionPopup(updatedTask);
+                          }
+                        }
+                      });
+                    },
+                    icon: Icons.emoji_nature,
+                    label: 'Focus',
+                    color: Colors.deepPurple.shade900,
+                    textColor: Colors.amber[300]!,
+                  ),
+                  const SizedBox(width: 8),
+                  _buildActionButton(
+                    onPressed: () {
+                      context
+                          .read<TaskProvider>()
+                          .toggleTaskCompletion(task.id);
+                      if (!task.isCompleted) {
+                        _showCompletionPopup(task);
+                      }
+                      setState(() {}); // Force UI update after completion
+                    },
+                    icon: Icons.check_circle_outline,
+                    label: 'Quick Complete',
+                    color: Colors.green.shade600,
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    onPressed: () {
+                      showDialog(
+                        context: context,
+                        builder: (context) => AlertDialog(
+                          title: const Text('Delete Task'),
+                          content: const Text(
+                              'Are you sure you want to delete this task?'),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(context),
+                              child: const Text('Cancel'),
+                            ),
+                            TextButton(
+                              onPressed: () {
+                                context
+                                    .read<TaskProvider>()
+                                    .deleteTask(task.id);
+                                Navigator.pop(context);
+                              },
+                              child: const Text('Delete'),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.delete_outline),
+                    color: Colors.red.shade400,
+                    tooltip: 'Delete Task',
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    iconSize: 20,
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
+  }
+
+  Widget _buildActionButton({
+    required VoidCallback onPressed,
+    required IconData icon,
+    required String label,
+    required Color color,
+    Color? textColor,
+  }) {
+    return ElevatedButton.icon(
+      onPressed: onPressed,
+      icon: Icon(icon, size: 18, color: textColor),
+      label: Text(
+        label,
+        style: TextStyle(
+          fontSize: 12,
+          color: textColor,
+        ),
+      ),
+      style: ElevatedButton.styleFrom(
+        backgroundColor: color,
+        foregroundColor: textColor ?? Colors.white,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
+        ),
+        elevation: 2,
+      ),
+    );
+  }
+
+  IconData _getDifficultyIcon(TaskDifficulty difficulty) {
+    switch (difficulty) {
+      case TaskDifficulty.easy:
+        return Icons.sentiment_satisfied;
+      case TaskDifficulty.medium:
+        return Icons.sentiment_neutral;
+      case TaskDifficulty.hard:
+        return Icons.sentiment_dissatisfied;
+      case TaskDifficulty.epic:
+        return Icons.emoji_events;
+    }
   }
 
   Color _getDifficultyColor(TaskDifficulty difficulty) {

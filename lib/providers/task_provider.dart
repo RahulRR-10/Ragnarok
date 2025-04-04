@@ -1,9 +1,11 @@
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/task.dart';
+import '../models/subtask.dart';
 import '../config/xp_config.dart';
 import 'package:uuid/uuid.dart';
 import 'dart:convert';
+import 'dart:math' as math;
 
 class TaskProvider extends ChangeNotifier {
   static const int _maxTitleLength = 100;
@@ -46,12 +48,12 @@ class TaskProvider extends ChangeNotifier {
   static const Map<String, int> achievementThresholds = {
     'first_task': 1,
     'streak_master': 7,
-    'subtask_star': 10,
-    'ai_friend': 5,
-    'speed_demon': 3,
     'task_master': 50,
     'epic_warrior': 10,
     'daily_champion': 5,
+    'xp_master': 1000, // New achievement for XP milestones
+    'quick_completer': 3, // Tasks completed in quick succession
+    'consistent_planner': 5, // Tasks created with AI breakdown
   };
 
   TaskProvider() {
@@ -153,33 +155,66 @@ class TaskProvider extends ChangeNotifier {
     final taskIndex = _tasks.indexWhere((task) => task.id == taskId);
     if (taskIndex != -1) {
       final task = _tasks[taskIndex];
-      final previousState = task.isCompleted;
-
-      // Create a new task with toggled completion state
-      final updatedTask = Task(
-        id: task.id,
-        title: task.title,
-        isCompleted: !previousState,
-        subtasks: task.subtasks,
-        xpEarned: !previousState ? calculateTaskXP(task) : 0,
-        completedAt: !previousState ? DateTime.now() : null,
-        createdAt: task.createdAt,
-        estimatedDuration: task.estimatedDuration,
-        isRecurring: task.isRecurring,
-        category: task.category,
-        difficulty: task.difficulty,
+      final isCompleted = !task.isCompleted;
+      _tasks[taskIndex] = task.copyWith(
+        isCompleted: isCompleted,
+        completedAt: isCompleted ? DateTime.now() : null,
       );
 
-      _tasks[taskIndex] = updatedTask;
-
-      if (!previousState && updatedTask.isCompleted) {
-        _tasksCompletedInSession++;
-        _lastTaskCompletionTime = DateTime.now();
-        addXP(updatedTask.xpEarned);
-        _saveTasks(); // Save after updating XP and completion
+      if (isCompleted) {
+        _totalXP += task.xpEarned;
+        _updateLevel();
+      } else {
+        _totalXP -= task.xpEarned;
+        _updateLevel();
       }
 
+      _saveTasks(); // Save immediately after toggling
       notifyListeners();
+    }
+  }
+
+  void toggleSubtaskCompletion(String taskId, String subtaskId) {
+    final taskIndex = _tasks.indexWhere((t) => t.id == taskId);
+    if (taskIndex != -1) {
+      final task = _tasks[taskIndex];
+      final subtaskIndex = task.subtasks.indexWhere((s) => s.id == subtaskId);
+      if (subtaskIndex != -1) {
+        final subtask = task.subtasks[subtaskIndex];
+        final updatedSubtask =
+            subtask.copyWith(isCompleted: !subtask.isCompleted);
+        final updatedSubtasks = List<Subtask>.from(task.subtasks);
+        updatedSubtasks[subtaskIndex] = updatedSubtask;
+
+        // Check if all subtasks are completed
+        final allSubtasksCompleted =
+            updatedSubtasks.every((s) => s.isCompleted);
+
+        // Create updated task with completed status and timestamp
+        final updatedTask = task.copyWith(
+          subtasks: updatedSubtasks,
+          isCompleted: allSubtasksCompleted,
+          completedAt: allSubtasksCompleted ? DateTime.now() : null,
+        );
+
+        _tasks[taskIndex] = updatedTask;
+
+        // Award XP when all subtasks are completed
+        if (allSubtasksCompleted && !task.isCompleted) {
+          _totalXP += task.xpEarned;
+          _updateLevel();
+          _tasksCompletedInSession++;
+        }
+        // Remove XP if uncompleting the last subtask
+        else if (!allSubtasksCompleted && task.isCompleted) {
+          _totalXP -= task.xpEarned;
+          _updateLevel();
+          _tasksCompletedInSession = math.max(0, _tasksCompletedInSession - 1);
+        }
+
+        _saveTasks(); // Save immediately after toggling subtask
+        notifyListeners();
+      }
     }
   }
 
@@ -188,27 +223,6 @@ class TaskProvider extends ChangeNotifier {
     _updateLevel();
     _saveTasks(); // Save after updating XP
     notifyListeners();
-  }
-
-  void toggleSubtaskCompletion(String taskId, String subtaskId) {
-    final taskIndex = _tasks.indexWhere((task) => task.id == taskId);
-    if (taskIndex != -1) {
-      final task = _tasks[taskIndex];
-      final subtaskIndex =
-          task.subtasks.indexWhere((subtask) => subtask.id == subtaskId);
-      if (subtaskIndex != -1) {
-        final subtask = task.subtasks[subtaskIndex];
-        final updatedSubtask = Subtask(
-          id: subtask.id,
-          title: subtask.title,
-          isCompleted: !subtask.isCompleted,
-        );
-        final updatedSubtasks = List<Subtask>.from(task.subtasks);
-        updatedSubtasks[subtaskIndex] = updatedSubtask;
-        _tasks[taskIndex] = task.copyWith(subtasks: updatedSubtasks);
-        notifyListeners();
-      }
-    }
   }
 
   void _updateLevel() {
@@ -267,21 +281,22 @@ class TaskProvider extends ChangeNotifier {
             task.completedAt?.month == now.month &&
             task.completedAt?.year == now.year)
         .length;
+    final tasksWithAIBreakdown =
+        _tasks.where((task) => task.subtasks.isNotEmpty).length;
 
     return {
       'first_task': completedTasks >= achievementThresholds['first_task']!,
       'streak_master': _hasSevenDayStreak(),
-      'subtask_star': _getCompletedSubtasksCount() >=
-          achievementThresholds['subtask_star']!,
-      'ai_friend': _tasks.where((task) => task.subtasks.isNotEmpty).length >=
-          achievementThresholds['ai_friend']!,
-      'speed_demon':
-          _tasksCompletedInSession >= achievementThresholds['speed_demon']!,
       'task_master': completedTasks >= achievementThresholds['task_master']!,
       'epic_warrior':
           epicTasksCompleted >= achievementThresholds['epic_warrior']!,
       'daily_champion':
           tasksCompletedToday >= achievementThresholds['daily_champion']!,
+      'xp_master': _totalXP >= achievementThresholds['xp_master']!,
+      'quick_completer':
+          _tasksCompletedInSession >= achievementThresholds['quick_completer']!,
+      'consistent_planner':
+          tasksWithAIBreakdown >= achievementThresholds['consistent_planner']!,
     };
   }
 
@@ -289,7 +304,10 @@ class TaskProvider extends ChangeNotifier {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
 
-    if (_lastCompletionDate == null) return false;
+    if (_lastCompletionDate == null) {
+      _streak = 0;
+      return false;
+    }
 
     final lastCompletion = DateTime(
       _lastCompletionDate!.year,
@@ -297,24 +315,57 @@ class TaskProvider extends ChangeNotifier {
       _lastCompletionDate!.day,
     );
 
+    // If the last completion was today, keep the streak
+    if (lastCompletion.isAtSameMomentAs(today)) {
+      return _streak >= 7;
+    }
+
     // If the last completion was yesterday, increment streak
     if (lastCompletion
         .isAtSameMomentAs(today.subtract(const Duration(days: 1)))) {
       _streak++;
-    }
-    // If the last completion was today, keep the streak
-    else if (lastCompletion.isAtSameMomentAs(today)) {
-      // Keep current streak
-    }
-    // If the last completion was more than 1 day ago, reset streak
-    else {
-      _streak = 1;
+      _lastCompletionDate = today;
+      _saveTasks();
+      return _streak >= 7;
     }
 
+    // If the last completion was more than 1 day ago, reset streak
+    _streak = 1;
     _lastCompletionDate = today;
     _saveTasks();
+    return false;
+  }
 
-    return _streak >= 7;
+  int _calculateCurrentStreak() {
+    if (_lastCompletionDate == null) return 0;
+
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final lastCompletion = DateTime(
+      _lastCompletionDate!.year,
+      _lastCompletionDate!.month,
+      _lastCompletionDate!.day,
+    );
+
+    // If the last completion was today, return current streak
+    if (lastCompletion.isAtSameMomentAs(today)) {
+      return _streak;
+    }
+
+    // If the last completion was yesterday, increment streak
+    if (lastCompletion
+        .isAtSameMomentAs(today.subtract(const Duration(days: 1)))) {
+      _streak++;
+      _lastCompletionDate = today;
+      _saveTasks();
+      return _streak;
+    }
+
+    // If the last completion was more than 1 day ago, reset streak
+    _streak = 1;
+    _lastCompletionDate = today;
+    _saveTasks();
+    return _streak;
   }
 
   int _getCompletedSubtasksCount() {
@@ -365,36 +416,6 @@ class TaskProvider extends ChangeNotifier {
     return xp;
   }
 
-  int _calculateCurrentStreak() {
-    final dates = _tasks
-        .where((task) => task.isCompleted && task.completedAt != null)
-        .map((task) => DateTime(task.completedAt!.year, task.completedAt!.month,
-            task.completedAt!.day))
-        .toSet()
-        .toList();
-
-    if (dates.isEmpty) return 0;
-
-    dates.sort((a, b) => b.compareTo(a));
-
-    var currentDate = dates[0];
-    var streakDays = 1;
-
-    for (var i = 1;
-        i < dates.length && streakDays < XPConfig.maxStreakMultiplier;
-        i++) {
-      final expectedPreviousDay = currentDate.subtract(const Duration(days: 1));
-      if (dates[i] == expectedPreviousDay) {
-        streakDays++;
-        currentDate = dates[i];
-      } else if (dates[i].isBefore(expectedPreviousDay)) {
-        break;
-      }
-    }
-
-    return streakDays;
-  }
-
   String getLevelTitle(int level) {
     const titles = [
       'Novice',
@@ -414,40 +435,57 @@ class TaskProvider extends ChangeNotifier {
   Future<void> addSubtasksToTask(
       String taskId, List<String> subtaskTitles) async {
     final taskIndex = _tasks.indexWhere((task) => task.id == taskId);
-    if (taskIndex == -1) return;
-
-    final task = _tasks[taskIndex];
-    final subtasks = subtaskTitles
-        .map((title) => Subtask(
-              id: const Uuid().v4(),
-              title: title,
-              isCompleted: false,
-            ))
-        .toList();
-
-    _tasks[taskIndex] = task.copyWith(subtasks: subtasks);
-    await _saveTasks();
-    notifyListeners();
+    if (taskIndex != -1) {
+      final task = _tasks[taskIndex];
+      final subtasks = subtaskTitles
+          .map((title) => Subtask(
+                id: const Uuid().v4(),
+                title: title,
+                isCompleted: false,
+              ))
+          .toList();
+      _tasks[taskIndex] = task.copyWith(subtasks: subtasks);
+      notifyListeners();
+    }
   }
 
   void updateTaskDifficulty(String taskId, TaskDifficulty difficulty) {
     final taskIndex = _tasks.indexWhere((task) => task.id == taskId);
     if (taskIndex != -1) {
       final task = _tasks[taskIndex];
-      _tasks[taskIndex] = Task(
-        id: task.id,
-        title: task.title,
-        isCompleted: task.isCompleted,
-        subtasks: task.subtasks,
-        xpEarned: task.xpEarned,
-        completedAt: task.completedAt,
-        createdAt: task.createdAt,
-        estimatedDuration: task.estimatedDuration,
-        isRecurring: task.isRecurring,
-        category: task.category,
-        difficulty: difficulty,
-      );
+      _tasks[taskIndex] = task.copyWith(difficulty: difficulty);
       notifyListeners();
     }
+  }
+
+  void updateTaskXP(String taskId, int xp) {
+    final taskIndex = _tasks.indexWhere((task) => task.id == taskId);
+    if (taskIndex != -1) {
+      final task = _tasks[taskIndex];
+      _tasks[taskIndex] = task.copyWith(xpEarned: xp);
+      notifyListeners();
+    }
+  }
+
+  int get completedTasksCount =>
+      _tasks.where((task) => task.isCompleted).length;
+
+  int get totalTasksCount => _tasks.length;
+
+  double get completionRate =>
+      totalTasksCount > 0 ? completedTasksCount / totalTasksCount : 0.0;
+
+  List<String> get achievements {
+    final achievements = <String>[];
+    final totalXP = this.totalXP;
+    final completedTasks = completedTasksCount;
+
+    if (totalXP >= 1000) achievements.add('xp_master');
+    if (completedTasks >= 10) achievements.add('task_master');
+    if (completedTasks >= 5) achievements.add('task_warrior');
+    if (completionRate >= 0.8) achievements.add('efficiency_expert');
+    if (completedTasks >= 3) achievements.add('quick_completer');
+
+    return achievements;
   }
 }

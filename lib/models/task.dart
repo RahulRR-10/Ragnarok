@@ -1,36 +1,12 @@
-import 'package:uuid/uuid.dart';
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'subtask.dart';
 
 enum TaskDifficulty {
   easy,
   medium,
   hard,
   epic,
-}
-
-class Subtask {
-  final String id;
-  final String title;
-  bool isCompleted;
-
-  Subtask({
-    required this.id,
-    required this.title,
-    this.isCompleted = false,
-  });
-
-  Map<String, dynamic> toJson() => {
-        'id': id,
-        'title': title,
-        'isCompleted': isCompleted,
-      };
-
-  factory Subtask.fromJson(Map<String, dynamic> json) => Subtask(
-        id: json['id'] as String,
-        title: json['title'] as String,
-        isCompleted: json['isCompleted'] as bool,
-      );
 }
 
 class Task {
@@ -45,6 +21,7 @@ class Task {
   final bool isRecurring;
   final String? category;
   final TaskDifficulty difficulty;
+  final bool isUrgent;
 
   static const int maxTitleLength = 100;
   static const int maxSubtasks = 10;
@@ -77,7 +54,8 @@ class Task {
     this.estimatedDuration,
     required this.isRecurring,
     this.category,
-    this.difficulty = TaskDifficulty.medium,
+    required this.difficulty,
+    this.isUrgent = false,
   })  : assert(title.trim().isNotEmpty, 'Title cannot be empty'),
         assert(title.length <= maxTitleLength,
             'Title cannot exceed $maxTitleLength characters'),
@@ -103,6 +81,7 @@ class Task {
     bool? isRecurring,
     String? category,
     TaskDifficulty? difficulty,
+    bool? isUrgent,
   }) {
     return Task(
       id: id ?? this.id,
@@ -116,6 +95,7 @@ class Task {
       isRecurring: isRecurring ?? this.isRecurring,
       category: category ?? this.category,
       difficulty: difficulty ?? this.difficulty,
+      isUrgent: isUrgent ?? this.isUrgent,
     );
   }
 
@@ -124,14 +104,15 @@ class Task {
       'id': id,
       'title': title,
       'isCompleted': isCompleted,
-      'subtasks': subtasks.map((s) => s.toJson()).toList(),
+      'subtasks': subtasks.map((subtask) => subtask.toJson()).toList(),
       'xpEarned': xpEarned,
       'completedAt': completedAt?.toIso8601String(),
       'createdAt': createdAt.toIso8601String(),
       'estimatedDuration': estimatedDuration?.inMinutes,
       'isRecurring': isRecurring,
       'category': category,
-      'difficulty': difficulty.toString(),
+      'difficulty': difficulty.name,
+      'isUrgent': isUrgent,
     };
   }
 
@@ -141,7 +122,7 @@ class Task {
       title: json['title'] as String,
       isCompleted: json['isCompleted'] as bool,
       subtasks: (json['subtasks'] as List)
-          .map((s) => Subtask.fromJson(s as Map<String, dynamic>))
+          .map((subtask) => Subtask.fromJson(subtask))
           .toList(),
       xpEarned: json['xpEarned'] as int,
       completedAt: json['completedAt'] != null
@@ -154,9 +135,10 @@ class Task {
       isRecurring: json['isRecurring'] as bool,
       category: json['category'] as String?,
       difficulty: TaskDifficulty.values.firstWhere(
-        (e) => e.toString() == json['difficulty'],
+        (e) => e.name == json['difficulty'],
         orElse: () => TaskDifficulty.medium,
       ),
+      isUrgent: json['isUrgent'] as bool? ?? false,
     );
   }
 

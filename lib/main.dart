@@ -83,7 +83,7 @@ class MyApp extends StatelessWidget {
           ),
           useMaterial3: true,
         ),
-        home: const LoginScreen(), // Change home to LoginScreen
+        home: const MainScreen(), // Change home to MainScreen
         routes: {
           '/login': (context) => const LoginScreen(), // Add login route
           '/main': (context) => const MainScreen(), // Add main route

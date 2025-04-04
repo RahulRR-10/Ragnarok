@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:animate_do/animate_do.dart';
+import 'main_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -26,12 +27,15 @@ class _LoginScreenState extends State<LoginScreen> {
       _isLoading = true;
     });
 
-    // Simulate login process
-    Future.delayed(const Duration(seconds: 2), () {
+    // Simulate a very short delay for visual feedback
+    Future.delayed(const Duration(milliseconds: 500), () {
       setState(() {
         _isLoading = false;
       });
-      // TODO: Implement actual login logic
+      // Navigate directly to main screen
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (context) => const MainScreen()),
+      );
     });
   }
 
@@ -40,7 +44,7 @@ class _LoginScreenState extends State<LoginScreen> {
     double screenHeight = MediaQuery.of(context).size.height;
 
     return Scaffold(
-      backgroundColor: Colors.transparent, 
+      backgroundColor: Colors.transparent,
       body: SizedBox.expand(
         child: Container(
           decoration: BoxDecoration(
@@ -60,10 +64,10 @@ class _LoginScreenState extends State<LoginScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 24.0),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.center,
-                  mainAxisSize: MainAxisSize.min, 
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     const SizedBox(height: 50),
-                    
+
                     // Animated Bee Logo
                     BounceInDown(
                       child: Container(
@@ -86,7 +90,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ),
                     ),
-                    
+
                     const SizedBox(height: 30),
 
                     // App Name "BeeFlow"
@@ -98,7 +102,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         color: Colors.amber[300],
                       ),
                     ),
-                    
+
                     const SizedBox(height: 10),
 
                     // Caption
@@ -122,7 +126,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         keyboardType: TextInputType.emailAddress,
                       ),
                     ),
-                    
+
                     const SizedBox(height: 20),
 
                     // Password Input
@@ -134,23 +138,23 @@ class _LoginScreenState extends State<LoginScreen> {
                         obscureText: !_isPasswordVisible,
                         suffixIcon: IconButton(
                           icon: Icon(
-                            _isPasswordVisible 
-                              ? Icons.visibility 
-                              : Icons.visibility_off,
+                            _isPasswordVisible
+                                ? Icons.visibility
+                                : Icons.visibility_off,
                             color: Colors.white.withOpacity(0.7),
                           ),
                           onPressed: _togglePasswordVisibility,
                         ),
                       ),
                     ),
-                    
+
                     const SizedBox(height: 30),
 
                     // Login Button
                     FadeInUp(
                       child: _buildLoginButton(),
                     ),
-                    
+
                     const SizedBox(height: 20),
 
                     // Register and Forgot Password
@@ -185,7 +189,8 @@ class _LoginScreenState extends State<LoginScreen> {
                       ],
                     ),
 
-                    const SizedBox(height: 20), // Extra space to prevent cut-off
+                    const SizedBox(
+                        height: 20), // Extra space to prevent cut-off
                   ],
                 ),
               ),
@@ -258,28 +263,34 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         ],
       ),
-      child: ElevatedButton(
-        onPressed: _isLoading ? null : _login,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.transparent,
-          shadowColor: Colors.transparent,
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(15),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: _login,
+          borderRadius: BorderRadius.circular(15),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16.0),
+            child: Center(
+              child: _isLoading
+                  ? const SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 2,
+                      ),
+                    )
+                  : Text(
+                      'Login',
+                      style: GoogleFonts.poppins(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.deepPurple.shade900,
+                      ),
+                    ),
+            ),
           ),
         ),
-        child: _isLoading
-            ? const CircularProgressIndicator(
-                valueColor: AlwaysStoppedAnimation<Color>(Colors.deepPurple),
-              )
-            : Text(
-                'Login',
-                style: GoogleFonts.poppins(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.deepPurple.shade800,
-                ),
-              ),
       ),
     );
   }
