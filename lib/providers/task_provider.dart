@@ -16,7 +16,7 @@ class TaskProvider extends ChangeNotifier {
   final _uuid = const Uuid();
   DateTime? _lastTaskCompletionTime;
   int _tasksCompletedInSession = 0;
-  int _sessionCompletions = 0;
+  final int _sessionCompletions = 0;
   int _totalXP = 0;
   int _currentLevel = 1;
   int _streak = 0;

@@ -302,12 +302,12 @@ class _FocusModeScreenState extends State<FocusModeScreen>
                                   style: GoogleFonts.lato(
                                     fontSize: 16,
                                     fontStyle: FontStyle.italic,
-                                    color: Color(0xFFFFD700),
+                                    color: const Color(0xFFFFD700),
                                   ),
                                   textAlign: TextAlign.center,
                                 ),
                                 const SizedBox(height: 8),
-                                Text(
+                                const Text(
                                   '- Greg Anderson',
                                   style: TextStyle(
                                     color: Color(0xFFFFD700),

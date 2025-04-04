@@ -85,8 +85,8 @@ class Task {
             'Cannot have more than $maxSubtasks subtasks'),
         assert(
             estimatedDuration == null ||
-                    (estimatedDuration!.inMinutes >= 5 &&
-                        estimatedDuration!.inMinutes <= 120)
+                    (estimatedDuration.inMinutes >= 5 &&
+                        estimatedDuration.inMinutes <= 120)
                 ? true
                 : false,
             'Estimated duration must be between 5 and 120 minutes');

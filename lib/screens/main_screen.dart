@@ -115,7 +115,11 @@ class _NavigationWrapperState extends State<NavigationWrapper> {
 
   Widget _buildBookmark() {
     return GestureDetector(
-      onTap: () => Navigator.pushReplacementNamed(context, '/'),
+      onTap: () => Navigator.pushNamedAndRemoveUntil(
+        context,
+        '/',
+        (route) => false,
+      ),
       child: Container(
         width: 50,
         height: 80,
@@ -224,6 +228,7 @@ class _MainScreenState extends State<MainScreen> {
         ),
         backgroundColor: Colors.deepPurple.shade800,
         foregroundColor: Colors.white,
+        automaticallyImplyLeading: false,
         actions: [
           IconButton(
             icon: const Icon(Icons.settings),

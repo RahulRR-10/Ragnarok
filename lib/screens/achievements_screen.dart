@@ -238,7 +238,7 @@ class AchievementsScreen extends StatelessWidget {
                           ],
                         ),
                       ),
-                      Icon(
+                      const Icon(
                         Icons.chevron_right,
                         color: Colors.white54,
                       ),

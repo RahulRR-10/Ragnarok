@@ -78,7 +78,7 @@ Keep each step very short, under 50 characters.'''
               final cleanStep =
                   step.replaceAll(RegExp(r'^\d+\.\s*'), '').trim();
               return cleanStep.length > 90
-                  ? cleanStep.substring(0, 90) + '...'
+                  ? '${cleanStep.substring(0, 90)}...'
                   : cleanStep;
             })
             .where((step) => !step.toLowerCase().contains('difficulty'))
@@ -91,7 +91,7 @@ Keep each step very short, under 50 characters.'''
               Task(
                 id: DateTime.now().millisecondsSinceEpoch.toString(),
                 title: task.title.length > 90
-                    ? task.title.substring(0, 90) + '...'
+                    ? '${task.title.substring(0, 90)}...'
                     : task.title,
                 isCompleted: false,
                 subtasks: const [],
@@ -111,8 +111,7 @@ Keep each step very short, under 50 characters.'''
         return (
           steps
               .map((step) => Task(
-                    id: DateTime.now().millisecondsSinceEpoch.toString() +
-                        '_${steps.indexOf(step)}',
+                    id: '${DateTime.now().millisecondsSinceEpoch}_${steps.indexOf(step)}',
                     title: step,
                     isCompleted: false,
                     subtasks: const [],
