@@ -1,7 +1,8 @@
 # 🐝 BeeFlow: Gamified Task Management
 
 <div align="center">
-  <img src="assets/beeflow_logo.png" alt="BeeFlow Logo" width="200"/>
+  ![WhatsApp Image 2025-04-05 at 02 18 02_cb3a4f7d](https://github.com/user-attachments/assets/d4ea73eb-7ef9-422e-8cb2-c51885a21720)
+
   
   <h3><i>stay in motion through the commotion</i></h3>
   
