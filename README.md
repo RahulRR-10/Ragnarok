@@ -3,6 +3,8 @@
 <div align="center">
   <img src="assets/beeflow_logo.png" alt="BeeFlow Logo" width="200"/>
   
+  <h3><i>stay in motion through the commotion</i></h3>
+  
   [![Flutter](https://img.shields.io/badge/Flutter-3.19.0-blue.svg)](https://flutter.dev)
   [![Dart](https://img.shields.io/badge/Dart-3.3.0-blue.svg)](https://dart.dev)
   [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
