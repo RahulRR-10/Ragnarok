@@ -4,6 +4,7 @@ import 'package:animate_do/animate_do.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:async';
 import '../services/firebase_auth_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -70,10 +71,18 @@ class _RegisterScreenState extends State<RegisterScreen> {
         _passwordController.text.trim(),
       );
 
-      // If registration was successful, navigate to main screen
+      // If registration was successful, navigate to video splash and then main screen
       if (user != null && mounted) {
-        // Navigate to main screen
-        Navigator.of(context).pushReplacementNamed('/main');
+        debugPrint('Registration successful, setting fresh_login flag');
+
+        // Set a flag in SharedPreferences to indicate fresh login
+        // This will be used to show the video splash
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setBool('fresh_login', true);
+        debugPrint('Set fresh_login flag to true');
+
+        // Navigate to video splash screen
+        Navigator.of(context).pushReplacementNamed('/video_splash');
       }
     } on FirebaseAuthException catch (e) {
       setState(() {
@@ -110,9 +119,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
       // Call signInWithGoogle and handle the result
       final user = await _authService.signInWithGoogle();
 
-      // If we got a user directly (popup flow), navigate to main screen
+      // If we got a user directly (popup flow), navigate to splash screen
       if (user != null && mounted) {
-        Navigator.of(context).pushReplacementNamed('/main');
+        // Set a flag in SharedPreferences to indicate fresh login
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setBool('fresh_login', true);
+        debugPrint('Set fresh_login flag to true');
+
+        // Navigate to video splash screen
+        Navigator.of(context).pushReplacementNamed('/video_splash');
       }
       // If user is null, it means we're using redirect flow
       // The AuthWrapper will handle navigation automatically

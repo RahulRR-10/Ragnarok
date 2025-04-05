@@ -16,6 +16,7 @@ import 'screens/progress_screen.dart';
 import 'screens/task_list_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/register_screen.dart';
+import 'screens/video_splash_screen.dart';
 
 // Providers
 import 'providers/task_provider.dart';
@@ -125,18 +126,50 @@ class MyApp extends StatelessWidget {
           '/focus': (context) => const FocusModeScreen(),
           '/settings': (context) => const SettingsScreen(),
           '/progress': (context) => const ProgressScreen(),
+          '/video_splash': (context) => const VideoSplashScreen(),
         },
       ),
     );
   }
 }
 
-class AuthWrapper extends StatelessWidget {
+class AuthWrapper extends StatefulWidget {
   const AuthWrapper({super.key});
+
+  @override
+  State<AuthWrapper> createState() => _AuthWrapperState();
+}
+
+class _AuthWrapperState extends State<AuthWrapper> {
+  late SharedPreferences _prefs;
+  bool _initialized = false;
+  bool _videoSplashShown = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _initPrefs();
+  }
+
+  Future<void> _initPrefs() async {
+    _prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _initialized = true;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     debugPrint('AuthWrapper building');
+
+    if (!_initialized) {
+      return const Scaffold(
+        body: Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
     return StreamBuilder<User?>(
       stream: FirebaseAuth.instance.authStateChanges(),
       builder: (context, snapshot) {
@@ -149,6 +182,14 @@ class AuthWrapper extends StatelessWidget {
         debugPrint('Auth state has data: ${snapshot.hasData}');
         debugPrint('User is authenticated: ${snapshot.data != null}');
 
+        final freshLogin = _prefs.getBool('fresh_login') ?? false;
+        debugPrint('Fresh login flag: $freshLogin');
+
+        // Track if video splash has been shown
+        if (_videoSplashShown) {
+          debugPrint('Video splash already shown this session');
+        }
+
         if (snapshot.connectionState == ConnectionState.waiting) {
           // Show loading spinner while waiting for auth state
           return const Scaffold(
@@ -158,21 +199,27 @@ class AuthWrapper extends StatelessWidget {
           );
         }
 
-        // If the user is authenticated, show the main screen
+        // If the user is authenticated, show video splash then main screen
         if (snapshot.connectionState == ConnectionState.active) {
           final user = snapshot.data;
           if (user != null) {
-            debugPrint('User is authenticated, navigating to main screen');
-            // User is authenticated, navigate to main screen
-            // Use a post-frame callback to avoid navigation during build
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              // Check if we're not already on the main screen
-              if (ModalRoute.of(context)?.settings.name != '/main') {
-                Navigator.of(context).pushReplacementNamed('/main');
-              }
-            });
-            return const MainScreen();
+            // Check for fresh login flag or if video splash hasn't been shown yet
+            if (freshLogin && !_videoSplashShown) {
+              debugPrint(
+                  'User is authenticated, showing video splash (fresh login)');
+              // Reset the flag
+              _prefs.setBool('fresh_login', false);
+              // Mark that we're showing the video splash
+              _videoSplashShown = true;
+              return const VideoSplashScreen();
+            } else {
+              debugPrint(
+                  'User is authenticated, showing main screen (not fresh login or splash already shown)');
+              return const MainScreen();
+            }
           } else {
+            // Reset the video splash shown flag when logged out
+            _videoSplashShown = false;
             debugPrint('User is not authenticated, showing login screen');
           }
         }
