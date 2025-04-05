@@ -57,18 +57,29 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     try {
+      debugPrint('Starting login process');
       final user = await _authService.signInWithEmailAndPassword(
         _emailController.text.trim(),
         _passwordController.text.trim(),
       );
 
-      // The AuthWrapper will handle navigation automatically
-      // No need to navigate manually
+      if (user != null && mounted) {
+        debugPrint('Login successful, navigating to main screen');
+        // Ensure we navigate to main screen explicitly
+        Navigator.of(context).pushReplacementNamed('/main');
+      } else {
+        debugPrint('Login failed without throwing an error');
+        setState(() {
+          _errorMessage = 'Login failed. Please try again.';
+        });
+      }
     } on FirebaseAuthException catch (e) {
+      debugPrint('FirebaseAuthException during login: ${e.code}');
       setState(() {
         _errorMessage = _getErrorMessage(e.code);
       });
     } catch (e) {
+      debugPrint('Error during login: $e');
       setState(() {
         _errorMessage = 'An error occurred. Please try again.';
       });

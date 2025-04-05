@@ -136,12 +136,35 @@ class FirebaseAuthService {
 
   Future<void> signOut() async {
     try {
-      await Future.wait([
-        _firebaseAuth.signOut(),
-        _googleSignIn.signOut(),
-      ]);
+      // Clear any cached auth states first
+      print('Starting sign out process');
+
+      // Sign out from Google (if signed in with Google)
+      try {
+        if (await _googleSignIn.isSignedIn()) {
+          print('Signing out from Google');
+          await _googleSignIn.signOut();
+        }
+      } catch (e) {
+        print('Error signing out from Google: $e');
+        // Continue with Firebase signout even if Google sign out fails
+      }
+
+      // Clear any persistence data
+      print('Clearing Firebase persistence');
+      await _firebaseAuth.setPersistence(Persistence.NONE);
+
+      // Sign out from Firebase
+      print('Signing out from Firebase');
+      await _firebaseAuth.signOut();
+
+      // Set persistence back to session after logout
+      print('Setting persistence back to session');
+      await _firebaseAuth.setPersistence(Persistence.SESSION);
+
+      print('Sign out completed successfully');
     } catch (e) {
-      print('Error signing out: $e');
+      print('Error during sign out process: $e');
       rethrow;
     }
   }

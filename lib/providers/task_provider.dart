@@ -415,13 +415,28 @@ class TaskProvider extends ChangeNotifier {
   // Helper method to get XP earned today
   int getTodayXP() {
     final now = DateTime.now();
-    return _tasks
+    final today = DateTime(now.year, now.month, now.day);
+
+    final completedTasksToday = _tasks
         .where((task) =>
             task.isCompleted &&
-            task.completedAt?.day == now.day &&
-            task.completedAt?.month == now.month &&
-            task.completedAt?.year == now.year)
-        .fold(0, (sum, task) => sum + task.xpEarned);
+            task.completedAt != null &&
+            DateTime(task.completedAt!.year, task.completedAt!.month,
+                    task.completedAt!.day)
+                .isAtSameMomentAs(today))
+        .toList();
+
+    debugPrint('Found ${completedTasksToday.length} tasks completed today');
+
+    int todayXP = 0;
+    for (final task in completedTasksToday) {
+      todayXP += task.xpEarned;
+      debugPrint(
+          'Task "${task.title}" contributed ${task.xpEarned} XP, running total: $todayXP');
+    }
+
+    debugPrint('Total XP earned today: $todayXP');
+    return todayXP;
   }
 
   // Helper method to check achievements

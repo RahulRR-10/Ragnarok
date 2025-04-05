@@ -180,14 +180,14 @@ class ProgressScreen extends StatelessWidget {
         _buildStatCard(
           context,
           'Total XP',
-          totalXP.toString(),
+          _formatXP(totalXP),
           Icons.star,
           Colors.amber[300]!,
         ),
         _buildStatCard(
           context,
           'Today\'s XP',
-          todayXP.toString(),
+          _formatXP(todayXP),
           Icons.today,
           Colors.amber[300]!,
         ),
@@ -200,6 +200,14 @@ class ProgressScreen extends StatelessWidget {
         ),
       ],
     );
+  }
+
+  String _formatXP(int xp) {
+    if (xp >= 1000) {
+      final thousands = (xp / 1000).toStringAsFixed(1);
+      return '${thousands}k';
+    }
+    return xp.toString();
   }
 
   Widget _buildStatCard(BuildContext context, String title, String value,
