@@ -103,7 +103,11 @@ class _FocusScreenState extends State<FocusScreen> {
 
   void _completeSelectedSubtasks() {
     final taskProvider = context.read<TaskProvider>();
+    debugPrint(
+        'Completing ${_selectedSubtasks.length} subtasks for task ${widget.task.id}');
+
     for (final subtaskId in _selectedSubtasks) {
+      debugPrint('Toggling subtask completion: $subtaskId');
       taskProvider.toggleSubtaskCompletion(widget.task.id, subtaskId);
     }
     setState(() {
@@ -113,12 +117,17 @@ class _FocusScreenState extends State<FocusScreen> {
     // Get the updated task after completing subtasks
     final updatedTask =
         taskProvider.tasks.firstWhere((t) => t.id == widget.task.id);
+    debugPrint('Updated task after completing subtasks: ${updatedTask.id}');
+    debugPrint(
+        'All subtasks completed: ${updatedTask.subtasks.every((subtask) => subtask.isCompleted)}');
+    debugPrint('Task already completed: ${updatedTask.isCompleted}');
 
     // Check if all subtasks are completed
     if (updatedTask.subtasks.every((subtask) => subtask.isCompleted)) {
       // Mark the main task as complete and award XP only if not already completed
       if (!updatedTask.isCompleted) {
-        taskProvider.toggleTaskCompletion(widget.task.id);
+        debugPrint('Marking task as complete: ${widget.task.id}');
+        taskProvider.toggleTaskCompletion(widget.task.id, true);
         _showCompletionPopup(updatedTask);
       }
 
@@ -449,7 +458,7 @@ class _FocusScreenState extends State<FocusScreen> {
                     if (updatedTask.subtasks.every((s) => s.isCompleted)) {
                       // Mark the main task as complete and award XP only if not already completed
                       if (!updatedTask.isCompleted) {
-                        taskProvider.toggleTaskCompletion(task.id);
+                        taskProvider.toggleTaskCompletion(task.id, true);
                         _showCompletionPopup(updatedTask);
                       }
 
@@ -491,7 +500,7 @@ class _FocusScreenState extends State<FocusScreen> {
                               .every((s) => s.isCompleted)) {
                             // Mark the main task as complete and award XP only if not already completed
                             if (!updatedTask.isCompleted) {
-                              taskProvider.toggleTaskCompletion(task.id);
+                              taskProvider.toggleTaskCompletion(task.id, true);
                               _showCompletionPopup(updatedTask);
                             }
 

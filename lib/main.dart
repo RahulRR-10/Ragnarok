@@ -5,6 +5,8 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_database/firebase_database.dart';
+import 'package:flutter/foundation.dart';
 
 // Screens
 import 'screens/main_screen.dart';
@@ -36,6 +38,19 @@ void main() async {
       measurementId: "G-DRYF5DQCEZ",
     ),
   );
+
+  // Check authentication state
+  final auth = FirebaseAuth.instance;
+  debugPrint(
+      'Current auth state: ${auth.currentUser != null ? 'Logged in' : 'Not logged in'}');
+  if (auth.currentUser != null) {
+    debugPrint('User ID: ${auth.currentUser!.uid}');
+  }
+
+  // Only enable persistence for non-web platforms
+  if (!kIsWeb) {
+    FirebaseDatabase.instance.setPersistenceEnabled(true);
+  }
 
   final prefs = await SharedPreferences.getInstance();
 
