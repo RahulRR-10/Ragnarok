@@ -256,7 +256,7 @@ class ProgressScreen extends StatelessWidget {
   Widget _buildAchievements(
       BuildContext context, Map<String, bool> achievements) {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Padding(
           padding: const EdgeInsets.all(16.0),
@@ -264,9 +264,10 @@ class ProgressScreen extends StatelessWidget {
             'Achievements',
             style: TextStyle(
               color: Colors.amber[300],
-              fontSize: 18,
+              fontSize: 24,
               fontWeight: FontWeight.bold,
             ),
+            textAlign: TextAlign.center,
           ),
         ),
         GridView.builder(
@@ -474,7 +475,7 @@ class ProgressScreen extends StatelessWidget {
         tasks.where((task) => task.isCompleted).take(5).toList();
 
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Padding(
           padding: const EdgeInsets.all(16.0),
@@ -482,9 +483,10 @@ class ProgressScreen extends StatelessWidget {
             'Recent Tasks',
             style: TextStyle(
               color: Colors.amber[300],
-              fontSize: 18,
+              fontSize: 24,
               fontWeight: FontWeight.bold,
             ),
+            textAlign: TextAlign.center,
           ),
         ),
         ListView.builder(
