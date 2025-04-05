@@ -126,7 +126,11 @@ class MyApp extends StatelessWidget {
           '/focus': (context) => const FocusModeScreen(),
           '/settings': (context) => const SettingsScreen(),
           '/progress': (context) => const ProgressScreen(),
-          '/video_splash': (context) => const VideoSplashScreen(),
+          '/video_splash': (context) => SplashScreen(
+  onSplashEnd: () {
+    Navigator.pushReplacementNamed(context, '/main');
+  },
+),
         },
       ),
     );
@@ -211,7 +215,11 @@ class _AuthWrapperState extends State<AuthWrapper> {
               _prefs.setBool('fresh_login', false);
               // Mark that we're showing the video splash
               _videoSplashShown = true;
-              return const VideoSplashScreen();
+              return SplashScreen(
+  onSplashEnd: () {
+    Navigator.pushReplacementNamed(context, '/main');
+  },
+);
             } else {
               debugPrint(
                   'User is authenticated, showing main screen (not fresh login or splash already shown)');

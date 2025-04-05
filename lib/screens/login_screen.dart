@@ -349,9 +349,9 @@ class _LoginScreenState extends State<LoginScreen> {
                               elevation: 0,
                             ),
                             icon: Image.asset(
-                              'assets/images/google_logo.svg',
-                              height: 24,
-                              width: 24,
+                              'assets/images/google.png',
+                              height: 28,
+                              width: 28,
                               errorBuilder: (context, error, stackTrace) {
                                 return Icon(
                                   Icons.g_mobiledata,

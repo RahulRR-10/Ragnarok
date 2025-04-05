@@ -90,7 +90,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       });
     } catch (e) {
       setState(() {
-        _errorMessage = 'An error occurred. Please try again.';
+        _errorMessage = 'Login or password invalid. Please try again.';
       });
     } finally {
       if (mounted) {
@@ -421,9 +421,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                               elevation: 0,
                             ),
                             icon: Image.asset(
-                              'assets/images/google_logo.svg',
-                              height: 24,
-                              width: 24,
+                              'assets/images/google.png',
+                              height: 28,
+                              width: 28,
                               errorBuilder: (context, error, stackTrace) {
                                 return Icon(
                                   Icons.g_mobiledata,

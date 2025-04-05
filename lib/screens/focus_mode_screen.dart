@@ -14,6 +14,32 @@ class FocusModeScreen extends StatefulWidget {
 
 class _FocusModeScreenState extends State<FocusModeScreen>
     with SingleTickerProviderStateMixin {
+  final List<Map<String, String>> _quotes = [
+  {
+    'quote': '"Focus on the journey, not the destination. Joy is found not in finishing an activity but in doing it."',
+    'author': '- Greg Anderson',
+  },
+  {
+    'quote': '"The successful warrior is also just the average man, except with laser-like focus."',
+    'author': '- Bruce Lee',
+  },
+  {
+    'quote': '"You can do anything you want, but not everything at the same time."',
+    'author': '- David Allen',
+  },
+  {
+    'quote': '"Concentrate your thoughts upon the work in hand. The sun’s rays do not burn until brought to focus."',
+    'author': '- Alexander Graham Bell',
+  },
+  {
+    'quote': '"Lack of direction, not lack of time, is the problem. We all have twenty-four hour days."',
+    'author': '- Zig Ziglar',
+  },
+  ];
+
+  int _currentQuoteIndex = 0;
+  late Timer _quoteTimer;
+
   final audioPlayer = AudioPlayer();
   Timer? _timer;
   int _timeLeft = 0;
@@ -45,6 +71,13 @@ class _FocusModeScreenState extends State<FocusModeScreen>
     _fadeAnimation = Tween<double>(begin: 1.0, end: 0.0).animate(
       CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
     );
+    _quoteTimer = Timer.periodic(const Duration(seconds: 6), (timer) {
+  if (mounted && !_isTimerActive) {
+    setState(() {
+      _currentQuoteIndex = (_currentQuoteIndex + 1) % _quotes.length;
+    });
+  }
+});
   }
 
   Future<void> _initializeAudio() async {
@@ -254,6 +287,7 @@ class _FocusModeScreenState extends State<FocusModeScreen>
     audioPlayer.dispose();
     _customDurationController.dispose();
     _animationController.dispose();
+    _quoteTimer.cancel();
     super.dispose();
   }
 
@@ -304,23 +338,36 @@ class _FocusModeScreenState extends State<FocusModeScreen>
                                   color: Colors.amber.shade300,
                                 ),
                                 const SizedBox(height: 12),
-                                Text(
-                                  '"Focus on the journey, not the destination. Joy is found not in finishing an activity but in doing it."',
-                                  style: GoogleFonts.lato(
-                                    fontSize: 16,
-                                    fontStyle: FontStyle.italic,
-                                    color: const Color(0xFFFFD700),
-                                  ),
-                                  textAlign: TextAlign.center,
-                                ),
-                                const SizedBox(height: 8),
-                                const Text(
-                                  '- Greg Anderson',
-                                  style: TextStyle(
-                                    color: Color(0xFFFFD700),
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
+                                        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 500),
+          transitionBuilder: (child, animation) => FadeTransition(
+            opacity: animation,
+            child: child,
+          ),
+          child: Column(
+            key: ValueKey<int>(_currentQuoteIndex),
+            children: [
+              Text(
+                _quotes[_currentQuoteIndex]['quote']!,
+                style: GoogleFonts.lato(
+                  fontSize: 16,
+                  fontStyle: FontStyle.italic,
+                  color: const Color(0xFFFFD700),
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                _quotes[_currentQuoteIndex]['author']!,
+                style: const TextStyle(
+                  color: Color(0xFFFFD700),
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+        ),
+
                               ],
                             ),
                           ),
