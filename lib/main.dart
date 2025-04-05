@@ -136,13 +136,33 @@ class AuthWrapper extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    debugPrint('AuthWrapper building');
     return StreamBuilder<User?>(
       stream: FirebaseAuth.instance.authStateChanges(),
       builder: (context, snapshot) {
+        // Add more detailed debugging
+        debugPrint('Auth state connection: ${snapshot.connectionState}');
+        debugPrint('Auth state has error: ${snapshot.hasError}');
+        if (snapshot.hasError) {
+          debugPrint('Auth state error: ${snapshot.error}');
+        }
+        debugPrint('Auth state has data: ${snapshot.hasData}');
+        debugPrint('User is authenticated: ${snapshot.data != null}');
+
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          // Show loading spinner while waiting for auth state
+          return const Scaffold(
+            body: Center(
+              child: CircularProgressIndicator(),
+            ),
+          );
+        }
+
         // If the user is authenticated, show the main screen
         if (snapshot.connectionState == ConnectionState.active) {
           final user = snapshot.data;
           if (user != null) {
+            debugPrint('User is authenticated, navigating to main screen');
             // User is authenticated, navigate to main screen
             // Use a post-frame callback to avoid navigation during build
             WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -152,6 +172,8 @@ class AuthWrapper extends StatelessWidget {
               }
             });
             return const MainScreen();
+          } else {
+            debugPrint('User is not authenticated, showing login screen');
           }
         }
 

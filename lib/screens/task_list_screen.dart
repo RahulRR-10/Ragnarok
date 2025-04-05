@@ -103,6 +103,7 @@ class _TaskListScreenState extends State<TaskListScreen> {
 
   Future<(List<String>, TaskDifficulty, int)> _getAIBreakdown(Task task) async {
     try {
+      debugPrint('Requesting AI breakdown for task: ${task.title}');
       final response = await http.post(
         Uri.parse('${GeminiConfig.endpoint}?key=${GeminiConfig.apiKey}'),
         headers: {
@@ -117,7 +118,7 @@ class _TaskListScreenState extends State<TaskListScreen> {
                       '''Analyze this task and provide a response in this exact format:
 
 DIFFICULTY: [easy/medium/hard/epic]
-XP: [number between 10-100]
+XP: [number between 50-400 based on complexity]
 STEPS:
 1. [First step]
 2. [Second step]
@@ -137,7 +138,7 @@ Task to analyze: ${task.title}'''
 
       if (response.statusCode == 429) {
         debugPrint('Rate limited by Gemini AI');
-        return (<String>[], TaskDifficulty.medium, 20);
+        return (<String>[], TaskDifficulty.medium, 100);
       }
 
       if (response.statusCode == 200) {
@@ -145,12 +146,15 @@ Task to analyze: ${task.title}'''
         final content =
             data['candidates'][0]['content']['parts'][0]['text'] as String;
 
+        debugPrint('Raw AI response: $content');
+
         final difficultyMatch =
             RegExp(r'DIFFICULTY:\s*(\w+)').firstMatch(content);
         TaskDifficulty difficulty = TaskDifficulty.medium;
 
         if (difficultyMatch != null) {
           final difficultyStr = difficultyMatch.group(1)?.toLowerCase() ?? '';
+          debugPrint('Extracted difficulty: $difficultyStr');
           switch (difficultyStr) {
             case 'easy':
               difficulty = TaskDifficulty.easy;
@@ -162,15 +166,51 @@ Task to analyze: ${task.title}'''
               difficulty = TaskDifficulty.epic;
               break;
           }
+        } else {
+          debugPrint(
+              'No difficulty found in AI response, using default: medium');
         }
 
         final xpMatch = RegExp(r'XP:\s*(\d+)').firstMatch(content);
-        int xp = 20;
+        int xp = 100; // Default medium task XP
+
         if (xpMatch != null) {
-          xp = int.tryParse(xpMatch.group(1) ?? '20') ?? 20;
-          debugPrint('Extracted XP from AI response: $xp');
+          final xpString = xpMatch.group(1) ?? '100';
+          debugPrint('Extracted XP string from AI response: "$xpString"');
+
+          try {
+            xp = int.parse(xpString);
+            debugPrint('Successfully parsed XP from AI response: $xp');
+
+            // Ensure XP is within reasonable bounds
+            if (xp < 50) {
+              debugPrint('XP too low, adjusting to minimum: 50');
+              xp = 50;
+            } else if (xp > 400) {
+              debugPrint('XP too high, adjusting to maximum: 400');
+              xp = 400;
+            }
+          } catch (e) {
+            debugPrint('Error parsing XP value: $e, using default: $xp');
+          }
         } else {
-          debugPrint('No XP found in AI response, using default: $xp');
+          // If no XP is specified, set based on difficulty
+          debugPrint('No XP found in AI response, setting based on difficulty');
+          switch (difficulty) {
+            case TaskDifficulty.easy:
+              xp = 50;
+              break;
+            case TaskDifficulty.medium:
+              xp = 100;
+              break;
+            case TaskDifficulty.hard:
+              xp = 200;
+              break;
+            case TaskDifficulty.epic:
+              xp = 400;
+              break;
+          }
+          debugPrint('Set XP based on difficulty: $xp');
         }
 
         final steps = RegExp(r'STEPS:\s*((?:\d+\.\s*[^\n]+\n?)+)')
@@ -203,14 +243,16 @@ Task to analyze: ${task.title}'''
           debugPrint('Subtask: $step');
         }
 
+        debugPrint(
+            'Final AI breakdown: Difficulty=$difficulty, XP=$xp, Steps=${steps.length}');
         return (steps, difficulty, xp);
       }
 
       debugPrint('Gemini AI error: ${response.statusCode} - ${response.body}');
-      return (<String>[], TaskDifficulty.medium, 20);
+      return (<String>[], TaskDifficulty.medium, 100);
     } catch (e) {
       debugPrint('Error getting AI breakdown: $e');
-      return (<String>[], TaskDifficulty.medium, 20);
+      return (<String>[], TaskDifficulty.medium, 100);
     }
   }
 

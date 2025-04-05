@@ -1,4 +1,4 @@
-# 🐝 BeeFlow: Gamified Task Management
+# 🐝 BeeFlow: ADHD Task Manager
 
 <div align="center">
   <img src="assets/beeflow_logo.png" alt="BeeFlow Logo" width="200"/>
@@ -12,7 +12,7 @@
 
 ## 🌟 Transform Your Productivity Journey
 
-BeeFlow is a beautifully designed task management app that turns your daily to-dos into an epic adventure. With gamification elements, AI-powered task breakdown, and a focus on maintaining streaks, BeeFlow helps you stay motivated and productive.
+BeeFlow is an innovative task management application specifically designed for individuals with ADHD. With its intuitive interface, gamification features, and AI-powered task breakdowns, BeeFlow helps users stay focused and accomplish their goals.
 
 ## ✨ Key Features
 
@@ -36,6 +36,36 @@ BeeFlow is a beautifully designed task management app that turns your daily to-d
 - **Daily Insights**: See your daily XP earnings and completion rates
 - **Achievement Gallery**: View all your unlocked achievements
 - **Recent Activity**: Review your recently completed tasks
+
+### 🐝 Friendly Interface
+
+- **Bee-themed design**: Engaging yellow and purple color scheme with bee mascot
+- **Intuitive navigation**: Simple bottom navigation bar with three main sections
+- **Draggable bookmark**: Quick access to home from any screen
+
+### 🧠 AI-Powered Task Breakdown
+
+- **Task analysis**: Automatically breaks down tasks into manageable subtasks
+- **Difficulty assessment**: AI evaluates and assigns appropriate difficulty levels
+- **XP calculation**: Customized experience points based on task complexity
+
+### 🎤 Voice Input
+
+- **Speech-to-text**: Create tasks using voice commands
+- **Real-time transcription**: See your spoken words converted to text instantly
+- **Hands-free operation**: Perfect for when typing is inconvenient
+
+### ⏱️ Focus Mode
+
+- **Pomodoro timer**: Built-in 25/5 minute work/break cycle
+- **Subtask tracking**: Check off subtasks as you complete them
+- **Distraction-free interface**: Clean design to maintain focus
+
+### 🏆 Progress Tracking
+
+- **XP system**: Earn experience points for completing tasks
+- **Level progression**: Watch your productivity level increase over time
+- **Achievement badges**: Unlock achievements for consistent performance
 
 ## 🚀 Getting Started
 
@@ -97,6 +127,13 @@ BeeFlow is a beautifully designed task management app that turns your daily to-d
 3. Complete subtasks during focused work sessions
 4. Return to the task list with a sense of accomplishment
 
+### Focus Screen
+
+1. Select a task to focus on
+2. Use the Pomodoro timer to maintain concentration
+3. Complete subtasks during focused work sessions
+4. Return to the task list with a sense of accomplishment
+
 ## 🛠️ Built With
 
 - [Flutter](https://flutter.dev/) - UI framework
@@ -132,3 +169,70 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 <div align="center">
   <p>Made with ❤️ for productivity enthusiasts</p>
 </div>
+
+## 📱 Screens
+
+### Login & Registration
+
+- Secure authentication with email/password or Google sign-in
+- User profile creation with customizable settings
+- Anonymous login option for quick access
+
+### Home Screen
+
+- Motivational quotes that change on hover
+- Quick access cards to main app sections
+- Animated bee mascot for friendly interaction
+- Logout button for secure session management
+
+### Task List Screen
+
+- Complete overview of all your tasks
+- Color-coded difficulty levels for quick recognition
+- XP indicators showing task value
+- "Add Task" button with AI breakdown option
+- Voice input capability for hands-free task creation
+- Task filtering and sorting options
+- Quick-complete functionality for simple tasks
+
+### Task Creation
+
+- Simple task title input with optional voice recognition
+- AI breakdown option to generate subtasks automatically
+- Priority setting for urgent tasks
+- Clean and straightforward interface
+
+### Focus Screen
+
+- Pomodoro timer with start, pause, and reset controls
+- Subtask list with completion checkboxes
+- Session counter for tracking productivity streaks
+- Completion celebration with confetti animation
+- Draggable bookmark for quick navigation
+
+### Progress Screen
+
+- XP and level visualization
+- Daily, weekly, and monthly progress charts
+- Achievement badges and unlocked rewards
+- Productivity insights and trends
+
+### Settings
+
+- Theme customization options
+- Notification preferences
+- Account management
+- Data backup and sync settings
+- Help and support resources
+
+## 📄 Privacy & Security
+
+BeeFlow takes user privacy seriously. All task data is stored securely in Firebase with strict access rules. Speech recognition is performed locally on the device when possible, minimizing data transmission.
+
+## 📄 Support
+
+For support, feature requests, or bug reports, please open an issue on the repository or contact the development team.
+
+---
+
+_BeeFlow: Stay in motion without the commotion_ ✨
