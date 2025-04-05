@@ -129,9 +129,17 @@ class _FocusModeScreenState extends State<FocusModeScreen>
                     controller: _customDurationController,
                     keyboardType: TextInputType.number,
                     textAlign: TextAlign.center,
-                    style: const TextStyle(fontSize: 24),
+                    style: TextStyle(
+                      fontSize: 24,
+                      color: Colors.deepPurple.shade800,
+                      fontWeight: FontWeight.w500,
+                    ),
                     decoration: InputDecoration(
                       hintText: 'Enter minutes',
+                      hintStyle: TextStyle(
+                        color: Colors.deepPurple.shade300,
+                        fontSize: 16,
+                      ),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(15),
                       ),
