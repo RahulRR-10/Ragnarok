@@ -2,23 +2,23 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:animate_do/animate_do.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:google_sign_in/google_sign_in.dart';
 import 'dart:async';
-import 'main_screen.dart';
 import '../services/firebase_auth_service.dart';
 
-class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+class RegisterScreen extends StatefulWidget {
+  const RegisterScreen({super.key});
 
   @override
-  State<LoginScreen> createState() => _LoginScreenState();
+  State<RegisterScreen> createState() => _RegisterScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> {
+class _RegisterScreenState extends State<RegisterScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _confirmPasswordController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
   bool _isPasswordVisible = false;
+  bool _isConfirmPasswordVisible = false;
   bool _isLoading = false;
   String? _errorMessage;
   late final FirebaseAuthService _authService;
@@ -39,6 +39,7 @@ class _LoginScreenState extends State<LoginScreen> {
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
+    _confirmPasswordController.dispose();
     super.dispose();
   }
 
@@ -48,7 +49,13 @@ class _LoginScreenState extends State<LoginScreen> {
     });
   }
 
-  Future<void> _login() async {
+  void _toggleConfirmPasswordVisibility() {
+    setState(() {
+      _isConfirmPasswordVisible = !_isConfirmPasswordVisible;
+    });
+  }
+
+  Future<void> _register() async {
     if (!_formKey.currentState!.validate()) return;
 
     setState(() {
@@ -57,13 +64,17 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     try {
-      final user = await _authService.signInWithEmailAndPassword(
+      // Create user with email and password using the auth service
+      final user = await _authService.createUserWithEmailAndPassword(
         _emailController.text.trim(),
         _passwordController.text.trim(),
       );
 
-      // The AuthWrapper will handle navigation automatically
-      // No need to navigate manually
+      // If registration was successful, navigate to main screen
+      if (user != null && mounted) {
+        // Navigate to main screen
+        Navigator.of(context).pushReplacementNamed('/main');
+      }
     } on FirebaseAuthException catch (e) {
       setState(() {
         _errorMessage = _getErrorMessage(e.code);
@@ -135,16 +146,14 @@ class _LoginScreenState extends State<LoginScreen> {
 
   String _getErrorMessage(String code) {
     switch (code) {
-      case 'user-not-found':
-        return 'No user found with this email.';
-      case 'wrong-password':
-        return 'Wrong password provided.';
+      case 'email-already-in-use':
+        return 'This email is already registered.';
       case 'invalid-email':
         return 'The email address is invalid.';
-      case 'user-disabled':
-        return 'This user account has been disabled.';
-      case 'too-many-requests':
-        return 'Too many attempts. Please try again later.';
+      case 'operation-not-allowed':
+        return 'Email/password accounts are not enabled.';
+      case 'weak-password':
+        return 'The password is too weak.';
       default:
         return 'An error occurred. Please try again.';
     }
@@ -178,6 +187,16 @@ class _LoginScreenState extends State<LoginScreen> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       const SizedBox(height: 50),
+
+                      // Back button
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: IconButton(
+                          icon:
+                              const Icon(Icons.arrow_back, color: Colors.white),
+                          onPressed: () => Navigator.of(context).pop(),
+                        ),
+                      ),
 
                       // Animated Bee Logo
                       BounceInDown(
@@ -218,7 +237,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
                       // Caption
                       Text(
-                        'stay in motion through the commotion',
+                        'Create your account',
                         style: GoogleFonts.poppins(
                           fontSize: 16,
                           fontStyle: FontStyle.italic,
@@ -226,7 +245,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ),
 
-                      const SizedBox(height: 50),
+                      const SizedBox(height: 30),
 
                       if (_errorMessage != null)
                         FadeInDown(
@@ -299,11 +318,74 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ),
 
+                      const SizedBox(height: 20),
+
+                      // Confirm Password Input
+                      FadeInRight(
+                        child: _buildInputField(
+                          controller: _confirmPasswordController,
+                          label: 'Confirm Password',
+                          icon: Icons.lock_outline,
+                          obscureText: !_isConfirmPasswordVisible,
+                          validator: (value) {
+                            if (value == null || value.isEmpty) {
+                              return 'Please confirm your password';
+                            }
+                            if (value != _passwordController.text) {
+                              return 'Passwords do not match';
+                            }
+                            return null;
+                          },
+                          suffixIcon: IconButton(
+                            icon: Icon(
+                              _isConfirmPasswordVisible
+                                  ? Icons.visibility
+                                  : Icons.visibility_off,
+                              color: Colors.white.withOpacity(0.7),
+                            ),
+                            onPressed: _toggleConfirmPasswordVisibility,
+                          ),
+                        ),
+                      ),
+
                       const SizedBox(height: 30),
 
-                      // Login Button
+                      // Register Button
                       FadeInUp(
-                        child: _buildLoginButton(),
+                        child: _buildRegisterButton(),
+                      ),
+
+                      const SizedBox(height: 20),
+
+                      // OR divider
+                      FadeInUp(
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Divider(
+                                color: Colors.white.withOpacity(0.3),
+                                thickness: 1,
+                              ),
+                            ),
+                            Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 16.0),
+                              child: Text(
+                                'OR',
+                                style: GoogleFonts.poppins(
+                                  color: Colors.white.withOpacity(0.7),
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ),
+                            Expanded(
+                              child: Divider(
+                                color: Colors.white.withOpacity(0.3),
+                                thickness: 1,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
 
                       const SizedBox(height: 20),
@@ -336,7 +418,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               },
                             ),
                             label: Text(
-                              'Sign in with Google',
+                              'Register with Google',
                               style: GoogleFonts.poppins(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w500,
@@ -348,23 +430,20 @@ class _LoginScreenState extends State<LoginScreen> {
 
                       const SizedBox(height: 20),
 
-                      // Register and Forgot Password
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          TextButton(
-                            onPressed: () {
-                              Navigator.of(context).pushNamed('/register');
-                            },
-                            child: Text(
-                              'Register',
-                              style: GoogleFonts.poppins(
-                                color: Colors.amber[300],
-                                fontWeight: FontWeight.bold,
-                              ),
+                      // Back to Login
+                      FadeInUp(
+                        child: TextButton(
+                          onPressed: () {
+                            Navigator.of(context).pop();
+                          },
+                          child: Text(
+                            'Already have an account? Login',
+                            style: GoogleFonts.poppins(
+                              color: Colors.amber[300],
+                              fontWeight: FontWeight.bold,
                             ),
                           ),
-                        ],
+                        ),
                       ),
 
                       const SizedBox(height: 20),
@@ -425,12 +504,12 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  Widget _buildLoginButton() {
+  Widget _buildRegisterButton() {
     return SizedBox(
       width: double.infinity,
       height: 50,
       child: ElevatedButton(
-        onPressed: _isLoading ? null : _login,
+        onPressed: _isLoading ? null : _register,
         style: ElevatedButton.styleFrom(
           backgroundColor: Colors.amber[300],
           foregroundColor: Colors.deepPurple[900],
@@ -449,7 +528,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
               )
             : Text(
-                'Login',
+                'Register',
                 style: GoogleFonts.poppins(
                   fontSize: 16,
                   fontWeight: FontWeight.bold,

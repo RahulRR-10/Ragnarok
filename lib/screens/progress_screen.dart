@@ -433,6 +433,25 @@ class ProgressScreen extends StatelessWidget {
           'title': 'Daily Champion',
           'unlockCondition': 'Unlocks after completing 5 tasks in a single day',
         };
+      case 'xp_master':
+        return {
+          'icon': Icons.workspace_premium,
+          'title': 'XP Master',
+          'unlockCondition': 'Unlocks after earning 1000 total XP',
+        };
+      case 'quick_completer':
+        return {
+          'icon': Icons.timer,
+          'title': 'Quick Completer',
+          'unlockCondition':
+              'Unlocks after completing 3 tasks in quick succession',
+        };
+      case 'consistent_planner':
+        return {
+          'icon': Icons.psychology,
+          'title': 'Consistent Planner',
+          'unlockCondition': 'Unlocks after using AI breakdown on 5 tasks',
+        };
       default:
         return {
           'icon': Icons.help,

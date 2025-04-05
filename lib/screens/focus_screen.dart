@@ -22,7 +22,7 @@ class _FocusScreenState extends State<FocusScreen> {
   bool _isBreak = false;
   int _sessions = 0;
   bool _isRunning = false;
-  List<String> _selectedSubtasks = [];
+  final List<String> _selectedSubtasks = [];
   double _bookmarkTop = 0.3; // Default position at 30% from top
   double _bookmarkRight = 0;
 
@@ -248,7 +248,7 @@ class _FocusScreenState extends State<FocusScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
+                        const Text(
                           'Subtasks',
                           style: TextStyle(
                             fontSize: 24,
@@ -516,7 +516,12 @@ class _FocusScreenState extends State<FocusScreen> {
                             decoration: isCompleted
                                 ? TextDecoration.lineThrough
                                 : TextDecoration.none,
+                            decorationColor: Colors.deepPurple.shade900,
+                            decorationThickness: 2,
                           ),
+                          softWrap: true,
+                          overflow: TextOverflow.visible,
+                          maxLines: null,
                         ),
                       ),
                     ],
