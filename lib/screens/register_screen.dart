@@ -22,26 +22,17 @@ class _RegisterScreenState extends State<RegisterScreen> {
   bool _isLoading = false;
   String? _errorMessage;
   late final FirebaseAuthService _authService;
-  StreamSubscription? _authSubscription;
 
   @override
   void initState() {
     super.initState();
     _authService = FirebaseAuthService();
-
-    // Listen for auth state changes
-    _authSubscription = _authService.onAuthStateChanged.listen((user) {
-      if (user != null && mounted) {
-        // The AuthWrapper will handle navigation automatically
-        // No need to navigate manually
-      }
-    });
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // Remove the automatic redirect check
+    // No need to check for redirect results here anymore
   }
 
   @override
@@ -49,7 +40,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
     _emailController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
-    _authSubscription?.cancel();
     super.dispose();
   }
 
@@ -112,25 +102,20 @@ class _RegisterScreenState extends State<RegisterScreen> {
       // Show a message to the user that they'll be redirected
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Redirecting to Google Sign-In...'),
+          content: Text('Signing in with Google...'),
           duration: Duration(seconds: 2),
         ),
       );
 
+      // Call signInWithGoogle and handle the result
       final user = await _authService.signInWithGoogle();
 
-      // If user is null, it means we're using redirect flow
-      // The AuthWrapper will handle navigation automatically
-      if (user == null) {
-        // Keep loading state active
-        // The AuthWrapper will handle navigation
-        return;
-      }
-
-      // If we got a user directly, navigate to main screen
+      // If we got a user directly (popup flow), navigate to main screen
       if (user != null && mounted) {
         Navigator.of(context).pushReplacementNamed('/main');
       }
+      // If user is null, it means we're using redirect flow
+      // The AuthWrapper will handle navigation automatically
     } catch (e) {
       print('Google Sign-In error: $e');
       setState(() {
@@ -156,18 +141,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
           _isLoading = false;
         });
       }
-    }
-  }
-
-  Future<void> _checkRedirectResult() async {
-    try {
-      // This will check if we're returning from a redirect
-      final user = await _authService.signInWithGoogle();
-      // The AuthWrapper will handle navigation automatically
-      // No need to navigate manually
-    } catch (e) {
-      print('Error checking redirect result: $e');
-      // Don't show error to user, just log it
     }
   }
 

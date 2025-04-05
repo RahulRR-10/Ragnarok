@@ -128,6 +128,14 @@ class AuthWrapper extends StatelessWidget {
         if (snapshot.connectionState == ConnectionState.active) {
           final user = snapshot.data;
           if (user != null) {
+            // User is authenticated, navigate to main screen
+            // Use a post-frame callback to avoid navigation during build
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              // Check if we're not already on the main screen
+              if (ModalRoute.of(context)?.settings.name != '/main') {
+                Navigator.of(context).pushReplacementNamed('/main');
+              }
+            });
             return const MainScreen();
           }
         }

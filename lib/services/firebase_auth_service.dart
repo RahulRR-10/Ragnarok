@@ -80,19 +80,31 @@ class FirebaseAuthService {
         // Use Firebase Auth's built-in Google sign-in for web
         final provider = GoogleAuthProvider();
 
-        // Check if we're returning from a redirect
-        final result = await _firebaseAuth.getRedirectResult();
-        if (result.user != null) {
-          // We're returning from a redirect with a user
+        try {
+          // Try to use popup first (better user experience)
+          print('Attempting Google Sign-In with popup');
+          final result = await _firebaseAuth.signInWithPopup(provider);
           return _userFromFirebase(result.user);
+        } catch (e) {
+          // If popup fails (e.g., blocked by browser), fall back to redirect
+          print('Popup failed, falling back to redirect: $e');
+
+          // Check if we're returning from a redirect
+          final redirectResult = await _firebaseAuth.getRedirectResult();
+          if (redirectResult.user != null) {
+            // We're returning from a redirect with a user
+            print(
+                'User authenticated after redirect: ${redirectResult.user?.email}');
+            return _userFromFirebase(redirectResult.user);
+          }
+
+          // If no redirect result, initiate the redirect flow
+          print('Initiating Google Sign-In redirect flow');
+          await _firebaseAuth.signInWithRedirect(provider);
+
+          // Return null to indicate we're in the redirect flow
+          return null;
         }
-
-        // If no redirect result, initiate the redirect flow
-        await _firebaseAuth.signInWithRedirect(provider);
-
-        // Return null to indicate we're in the redirect flow
-        // The auth state listener will handle navigation
-        return null;
       } else {
         // For mobile platforms, use the Google Sign-In plugin
         final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
