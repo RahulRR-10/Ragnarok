@@ -12,6 +12,8 @@ import 'focus_screen.dart';
 import 'package:confetti/confetti.dart';
 import 'dart:math';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
+import 'package:permission_handler/permission_handler.dart';
 
 class TaskListScreen extends StatefulWidget {
   const TaskListScreen({super.key});
@@ -24,16 +26,54 @@ class _TaskListScreenState extends State<TaskListScreen> {
   late ConfettiController _confettiController;
   bool _isLoading = false;
 
+  // Speech to text variables
+  final stt.SpeechToText _speech = stt.SpeechToText();
+  bool _isListening = false;
+  String _listeningStatus = '';
+
   @override
   void initState() {
     super.initState();
     _confettiController =
         ConfettiController(duration: const Duration(seconds: 2));
+    _initSpeech();
+  }
+
+  // Initialize speech recognition
+  Future<void> _initSpeech() async {
+    bool available = await _speech.initialize(
+      onStatus: (status) {
+        setState(() {
+          _listeningStatus = status;
+          if (status == 'done' || status == 'notListening') {
+            _isListening = false;
+          }
+        });
+        debugPrint('Speech status: $status');
+      },
+      onError: (error) {
+        setState(() {
+          _isListening = false;
+        });
+        debugPrint('Speech error: $error');
+      },
+    );
+    debugPrint('Speech recognition available: $available');
+  }
+
+  // Request microphone permission
+  Future<bool> _requestMicPermission() async {
+    var status = await Permission.microphone.status;
+    if (!status.isGranted) {
+      status = await Permission.microphone.request();
+    }
+    return status.isGranted;
   }
 
   @override
   void dispose() {
     _confettiController.dispose();
+    _speech.stop();
     super.dispose();
   }
 
@@ -188,14 +228,89 @@ Task to analyze: ${task.title}'''
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                TextField(
-                  controller: titleController,
-                  decoration: const InputDecoration(
-                    labelText: 'Task Title',
-                    border: OutlineInputBorder(),
-                  ),
-                  maxLength: 50,
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: titleController,
+                        decoration: const InputDecoration(
+                          labelText: 'Task Title',
+                          border: OutlineInputBorder(),
+                        ),
+                        maxLength: 50,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: _isListening
+                            ? Colors.amber.shade300
+                            : Colors.deepPurple.shade100,
+                        borderRadius: BorderRadius.circular(50),
+                      ),
+                      child: IconButton(
+                        onPressed: () async {
+                          bool hasPermission = await _requestMicPermission();
+                          if (!hasPermission) {
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content:
+                                      Text('Microphone permission required!'),
+                                ),
+                              );
+                            }
+                            return;
+                          }
+
+                          if (!_isListening) {
+                            var available = await _speech.initialize();
+                            if (available) {
+                              setState(() {
+                                _isListening = true;
+                              });
+                              _speech.listen(
+                                onResult: (result) {
+                                  setState(() {
+                                    titleController.text =
+                                        result.recognizedWords;
+                                  });
+                                },
+                                listenFor: const Duration(seconds: 15),
+                                pauseFor: const Duration(seconds: 3),
+                                partialResults: true,
+                                cancelOnError: true,
+                                listenMode: stt.ListenMode.confirmation,
+                              );
+                            }
+                          } else {
+                            setState(() {
+                              _isListening = false;
+                            });
+                            _speech.stop();
+                          }
+                        },
+                        icon: Icon(
+                          _isListening ? Icons.mic : Icons.mic_none,
+                          color: _isListening
+                              ? Colors.deepPurple.shade900
+                              : Colors.deepPurple.shade400,
+                        ),
+                        tooltip: 'Speak task title',
+                      ),
+                    ),
+                  ],
                 ),
+                if (_isListening) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    'Listening...',
+                    style: TextStyle(
+                      color: Colors.deepPurple.shade400,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 16),
                 CheckboxListTile(
                   title: const Text('Use AI to analyze task'),
@@ -223,11 +338,15 @@ Task to analyze: ${task.title}'''
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(context),
+              onPressed: () {
+                _speech.stop();
+                Navigator.pop(context);
+              },
               child: const Text('Cancel'),
             ),
             ElevatedButton(
               onPressed: () async {
+                _speech.stop();
                 if (titleController.text.isNotEmpty) {
                   setState(() {
                     _isLoading = true;
