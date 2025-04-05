@@ -54,6 +54,7 @@ class TaskProvider extends ChangeNotifier {
     'xp_master': 1000, // New achievement for XP milestones
     'quick_completer': 3, // Tasks completed in quick succession
     'consistent_planner': 5, // Tasks created with AI breakdown
+    'subtask_star': 10, // New achievement for completing 10 subtasks
   };
 
   TaskProvider() {
@@ -283,10 +284,13 @@ class TaskProvider extends ChangeNotifier {
         .length;
     final tasksWithAIBreakdown =
         _tasks.where((task) => task.subtasks.isNotEmpty).length;
+    final completedSubtasks = _getCompletedSubtasksCount();
 
     return {
       'first_task': completedTasks >= achievementThresholds['first_task']!,
       'streak_master': _hasSevenDayStreak(),
+      'subtask_star':
+          completedSubtasks >= achievementThresholds['subtask_star']!,
       'task_master': completedTasks >= achievementThresholds['task_master']!,
       'epic_warrior':
           epicTasksCompleted >= achievementThresholds['epic_warrior']!,
