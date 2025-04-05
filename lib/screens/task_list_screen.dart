@@ -5,11 +5,15 @@ import '../config/gemini_config.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import '../models/task.dart';
+import '../models/subtask.dart';
 import 'package:uuid/uuid.dart';
 import 'main_screen.dart';
 import 'focus_screen.dart';
 import 'package:confetti/confetti.dart';
 import 'dart:math';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
+import 'package:permission_handler/permission_handler.dart';
 
 class TaskListScreen extends StatefulWidget {
   const TaskListScreen({super.key});
@@ -22,16 +26,54 @@ class _TaskListScreenState extends State<TaskListScreen> {
   late ConfettiController _confettiController;
   bool _isLoading = false;
 
+  // Speech to text variables
+  final stt.SpeechToText _speech = stt.SpeechToText();
+  bool _isListening = false;
+  String _listeningStatus = '';
+
   @override
   void initState() {
     super.initState();
     _confettiController =
         ConfettiController(duration: const Duration(seconds: 2));
+    _initSpeech();
+  }
+
+  // Initialize speech recognition
+  Future<void> _initSpeech() async {
+    bool available = await _speech.initialize(
+      onStatus: (status) {
+        setState(() {
+          _listeningStatus = status;
+          if (status == 'done' || status == 'notListening') {
+            _isListening = false;
+          }
+        });
+        debugPrint('Speech status: $status');
+      },
+      onError: (error) {
+        setState(() {
+          _isListening = false;
+        });
+        debugPrint('Speech error: $error');
+      },
+    );
+    debugPrint('Speech recognition available: $available');
+  }
+
+  // Request microphone permission
+  Future<bool> _requestMicPermission() async {
+    var status = await Permission.microphone.status;
+    if (!status.isGranted) {
+      status = await Permission.microphone.request();
+    }
+    return status.isGranted;
   }
 
   @override
   void dispose() {
     _confettiController.dispose();
+    _speech.stop();
     super.dispose();
   }
 
@@ -59,7 +101,7 @@ class _TaskListScreenState extends State<TaskListScreen> {
     );
   }
 
-  Future<(List<Task>, TaskDifficulty, int)> _getAIBreakdown(Task task) async {
+  Future<(List<String>, TaskDifficulty, int)> _getAIBreakdown(Task task) async {
     try {
       final response = await http.post(
         Uri.parse('${GeminiConfig.endpoint}?key=${GeminiConfig.apiKey}'),
@@ -95,7 +137,7 @@ Task to analyze: ${task.title}'''
 
       if (response.statusCode == 429) {
         debugPrint('Rate limited by Gemini AI');
-        return (<Task>[], TaskDifficulty.medium, 20);
+        return (<String>[], TaskDifficulty.medium, 20);
       }
 
       if (response.statusCode == 200) {
@@ -126,6 +168,9 @@ Task to analyze: ${task.title}'''
         int xp = 20;
         if (xpMatch != null) {
           xp = int.tryParse(xpMatch.group(1) ?? '20') ?? 20;
+          debugPrint('Extracted XP from AI response: $xp');
+        } else {
+          debugPrint('No XP found in AI response, using default: $xp');
         }
 
         final steps = RegExp(r'STEPS:\s*((?:\d+\.\s*[^\n]+\n?)+)')
@@ -147,57 +192,25 @@ Task to analyze: ${task.title}'''
 
         if (steps.isEmpty) {
           debugPrint('No steps found in AI response');
-          return (
-            [
-              Task(
-                id: const Uuid().v4(),
-                title: task.title.length > 90
-                    ? '${task.title.substring(0, 90)}...'
-                    : task.title,
-                isCompleted: false,
-                subtasks: const [],
-                xpEarned: xp,
-                completedAt: null,
-                createdAt: DateTime.now(),
-                estimatedDuration: null,
-                isRecurring: false,
-                category: null,
-                difficulty: difficulty,
-                isUrgent: task.isUrgent,
-              )
-            ],
-            difficulty,
-            xp
-          );
+          final taskTitle = task.title.length > 90
+              ? '${task.title.substring(0, 90)}...'
+              : task.title;
+          return ([taskTitle], difficulty, xp);
         }
 
-        return (
-          steps
-              .map((step) => Task(
-                    id: const Uuid().v4(),
-                    title: step,
-                    isCompleted: false,
-                    subtasks: const [],
-                    xpEarned: 0,
-                    completedAt: null,
-                    createdAt: DateTime.now(),
-                    estimatedDuration: null,
-                    isRecurring: false,
-                    category: null,
-                    difficulty: difficulty,
-                    isUrgent: false,
-                  ))
-              .toList(),
-          difficulty,
-          xp
-        );
+        debugPrint('AI breakdown generated ${steps.length} subtasks');
+        for (var step in steps) {
+          debugPrint('Subtask: $step');
+        }
+
+        return (steps, difficulty, xp);
       }
 
       debugPrint('Gemini AI error: ${response.statusCode} - ${response.body}');
-      return (<Task>[], TaskDifficulty.medium, 20);
+      return (<String>[], TaskDifficulty.medium, 20);
     } catch (e) {
       debugPrint('Error getting AI breakdown: $e');
-      return (<Task>[], TaskDifficulty.medium, 20);
+      return (<String>[], TaskDifficulty.medium, 20);
     }
   }
 
@@ -215,14 +228,89 @@ Task to analyze: ${task.title}'''
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                TextField(
-                  controller: titleController,
-                  decoration: const InputDecoration(
-                    labelText: 'Task Title',
-                    border: OutlineInputBorder(),
-                  ),
-                  maxLength: 50,
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: titleController,
+                        decoration: const InputDecoration(
+                          labelText: 'Task Title',
+                          border: OutlineInputBorder(),
+                        ),
+                        maxLength: 50,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: _isListening
+                            ? Colors.amber.shade300
+                            : Colors.deepPurple.shade100,
+                        borderRadius: BorderRadius.circular(50),
+                      ),
+                      child: IconButton(
+                        onPressed: () async {
+                          bool hasPermission = await _requestMicPermission();
+                          if (!hasPermission) {
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content:
+                                      Text('Microphone permission required!'),
+                                ),
+                              );
+                            }
+                            return;
+                          }
+
+                          if (!_isListening) {
+                            var available = await _speech.initialize();
+                            if (available) {
+                              setState(() {
+                                _isListening = true;
+                              });
+                              _speech.listen(
+                                onResult: (result) {
+                                  setState(() {
+                                    titleController.text =
+                                        result.recognizedWords;
+                                  });
+                                },
+                                listenFor: const Duration(seconds: 15),
+                                pauseFor: const Duration(seconds: 3),
+                                partialResults: true,
+                                cancelOnError: true,
+                                listenMode: stt.ListenMode.confirmation,
+                              );
+                            }
+                          } else {
+                            setState(() {
+                              _isListening = false;
+                            });
+                            _speech.stop();
+                          }
+                        },
+                        icon: Icon(
+                          _isListening ? Icons.mic : Icons.mic_none,
+                          color: _isListening
+                              ? Colors.deepPurple.shade900
+                              : Colors.deepPurple.shade400,
+                        ),
+                        tooltip: 'Speak task title',
+                      ),
+                    ),
+                  ],
                 ),
+                if (_isListening) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    'Listening...',
+                    style: TextStyle(
+                      color: Colors.deepPurple.shade400,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 16),
                 CheckboxListTile(
                   title: const Text('Use AI to analyze task'),
@@ -250,47 +338,88 @@ Task to analyze: ${task.title}'''
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(context),
+              onPressed: () {
+                _speech.stop();
+                Navigator.pop(context);
+              },
               child: const Text('Cancel'),
             ),
             ElevatedButton(
               onPressed: () async {
+                _speech.stop();
                 if (titleController.text.isNotEmpty) {
                   setState(() {
                     _isLoading = true;
                   });
 
-                  final task = Task(
-                    id: const Uuid().v4(),
-                    title: titleController.text,
-                    isCompleted: false,
-                    subtasks: const [],
-                    xpEarned: useAIBreakdown ? 0 : 50,
-                    completedAt: null,
-                    createdAt: DateTime.now(),
-                    estimatedDuration: null,
-                    isRecurring: false,
-                    category: null,
-                    difficulty: TaskDifficulty.medium,
-                    isUrgent: isUrgent,
-                  );
-                  context.read<TaskProvider>().addTask(task);
-
                   if (useAIBreakdown) {
+                    // Create a temporary task to get the AI breakdown
+                    final tempTask = Task(
+                      id: const Uuid().v4(),
+                      userId: context.read<TaskProvider>().currentUserId ?? '',
+                      title: titleController.text,
+                      description: '',
+                      isCompleted: false,
+                      subtasks: const [],
+                      xpEarned: 0,
+                      completedAt: null,
+                      createdAt: DateTime.now(),
+                      estimatedDuration: null,
+                      isRecurring: false,
+                      category: null,
+                      difficulty: TaskDifficulty.medium,
+                      isUrgent: isUrgent,
+                    );
+
+                    // Get the AI breakdown
                     final (subtasks, difficulty, xp) =
-                        await _getAIBreakdown(task);
+                        await _getAIBreakdown(tempTask);
 
-                    context
-                        .read<TaskProvider>()
-                        .updateTaskDifficulty(task.id, difficulty);
-                    context.read<TaskProvider>().updateTaskXP(task.id, xp);
+                    // Create the final task with AI results
+                    final task = Task(
+                      id: const Uuid().v4(),
+                      userId: context.read<TaskProvider>().currentUserId ?? '',
+                      title: titleController.text,
+                      description: '',
+                      isCompleted: false,
+                      subtasks: subtasks
+                          .map((title) => Subtask(
+                                id: const Uuid().v4(),
+                                title: title,
+                                isCompleted: false,
+                              ))
+                          .toList(),
+                      xpEarned: xp,
+                      completedAt: null,
+                      createdAt: DateTime.now(),
+                      estimatedDuration: null,
+                      isRecurring: false,
+                      category: null,
+                      difficulty: difficulty,
+                      isUrgent: isUrgent,
+                    );
 
-                    if (subtasks.isNotEmpty) {
-                      await context.read<TaskProvider>().addSubtasksToTask(
-                            task.id,
-                            subtasks.map((task) => task.title).toList(),
-                          );
-                    }
+                    // Add the task with all properties already set
+                    context.read<TaskProvider>().addTask(task);
+                  } else {
+                    // Create and add a regular task without AI breakdown
+                    final task = Task(
+                      id: const Uuid().v4(),
+                      userId: context.read<TaskProvider>().currentUserId ?? '',
+                      title: titleController.text,
+                      description: '',
+                      isCompleted: false,
+                      subtasks: const [],
+                      xpEarned: 50,
+                      completedAt: null,
+                      createdAt: DateTime.now(),
+                      estimatedDuration: null,
+                      isRecurring: false,
+                      category: null,
+                      difficulty: TaskDifficulty.medium,
+                      isUrgent: isUrgent,
+                    );
+                    context.read<TaskProvider>().addTask(task);
                   }
 
                   setState(() {
@@ -355,7 +484,10 @@ Task to analyze: ${task.title}'''
               ),
               child: Consumer<TaskProvider>(
                 builder: (context, taskProvider, child) {
+                  debugPrint(
+                      'TaskListScreen: Received ${taskProvider.tasks.length} tasks from TaskProvider');
                   if (taskProvider.tasks.isEmpty) {
+                    debugPrint('TaskListScreen: No tasks to display');
                     return Center(
                       child: Text(
                         'No tasks yet. Add one to get started!',
@@ -551,7 +683,7 @@ Task to analyze: ${task.title}'''
                     onPressed: () {
                       context
                           .read<TaskProvider>()
-                          .toggleTaskCompletion(task.id);
+                          .toggleTaskCompletion(task.id, !task.isCompleted);
                       if (!task.isCompleted) {
                         _showCompletionPopup(task);
                       }
@@ -576,11 +708,27 @@ Task to analyze: ${task.title}'''
                               child: const Text('Cancel'),
                             ),
                             TextButton(
-                              onPressed: () {
-                                context
-                                    .read<TaskProvider>()
-                                    .deleteTask(task.id);
+                              onPressed: () async {
                                 Navigator.pop(context);
+                                try {
+                                  await context
+                                      .read<TaskProvider>()
+                                      .deleteTaskFromFirebase(task.id);
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content:
+                                          Text('Task deleted successfully'),
+                                      duration: Duration(seconds: 2),
+                                    ),
+                                  );
+                                } catch (e) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('Error deleting task: $e'),
+                                      duration: const Duration(seconds: 2),
+                                    ),
+                                  );
+                                }
                               },
                               child: const Text('Delete'),
                             ),

@@ -3,9 +3,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/task.dart';
 import '../models/subtask.dart';
 import '../config/xp_config.dart';
+import '../services/task_service.dart';
 import 'package:uuid/uuid.dart';
 import 'dart:convert';
 import 'dart:math' as math;
+import '../utils/firebase_utils.dart';
 
 class TaskProvider extends ChangeNotifier {
   static const int _maxTitleLength = 100;
@@ -13,7 +15,8 @@ class TaskProvider extends ChangeNotifier {
 
   List<Task> _tasks = [];
   late final SharedPreferences _prefs;
-  final bool _isLoading = false;
+  final TaskService _taskService = TaskService();
+  bool _isLoading = false;
   String? _error;
   final _uuid = const Uuid();
   DateTime? _lastTaskCompletionTime;
@@ -57,8 +60,12 @@ class TaskProvider extends ChangeNotifier {
     'subtask_star': 10, // New achievement for completing 10 subtasks
   };
 
+  // Add public getter for currentUserId
+  String? get currentUserId => _taskService.currentUserId;
+
   TaskProvider() {
     _initPrefs();
+    _setupTaskListener();
   }
 
   List<Task> get tasks => _tasks;
@@ -72,16 +79,38 @@ class TaskProvider extends ChangeNotifier {
   Future<void> _initPrefs() async {
     try {
       _prefs = await SharedPreferences.getInstance();
-      await _loadTasks();
+      await _loadUserStats();
     } catch (e) {
       _error = 'Failed to initialize storage: $e';
       debugPrint(_error);
     }
   }
 
-  Future<void> _loadTasks() async {
+  void _setupTaskListener() {
     try {
-      final tasksJson = _prefs.getStringList('tasks');
+      debugPrint(
+          'Setting up task listener for user: ${_taskService.currentUserId}');
+      _taskService.getUserTasks().listen(
+        (tasks) {
+          debugPrint('Received ${tasks.length} tasks from Firebase');
+          _tasks = tasks;
+          notifyListeners();
+        },
+        onError: (error) {
+          _error = 'Failed to load tasks: $error';
+          debugPrint(_error);
+          notifyListeners();
+        },
+      );
+    } catch (e) {
+      _error = 'Failed to setup task listener: $e';
+      debugPrint(_error);
+      notifyListeners();
+    }
+  }
+
+  Future<void> _loadUserStats() async {
+    try {
       final xp = _prefs.getInt('totalXP') ?? 0;
       final level = _prefs.getInt('currentLevel') ?? 1;
       final streak = _prefs.getInt('streak') ?? 0;
@@ -97,37 +126,168 @@ class TaskProvider extends ChangeNotifier {
       _currentLevel = level;
       _streak = streak;
       _tasksCompletedInSession = tasksCompletedInSession;
-
-      if (tasksJson != null) {
-        _tasks = tasksJson
-            .map((taskJson) => Task.fromJson(jsonDecode(taskJson)))
-            .toList()
-          ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-        notifyListeners();
-      }
     } catch (e) {
-      _error = 'Failed to load tasks: $e';
+      _error = 'Failed to load user stats: $e';
       debugPrint(_error);
     }
   }
 
-  Future<void> _saveTasks() async {
+  Future<void> addTask(Task task) async {
+    _isLoading = true;
+    _error = null; // Clear any previous errors
+    notifyListeners();
+
     try {
-      final tasksJson =
-          _tasks.map((task) => jsonEncode(task.toJson())).toList();
-      await _prefs.setStringList('tasks', tasksJson);
-      await _prefs.setInt('totalXP', _totalXP);
-      await _prefs.setInt('currentLevel', _currentLevel);
-      await _prefs.setInt('streak', _streak);
-      await _prefs.setInt('tasksCompletedInSession', _tasksCompletedInSession);
-      if (_lastCompletionDate != null) {
-        await _prefs.setString(
-            'lastCompletionDate', _lastCompletionDate!.toIso8601String());
+      // Make sure authentication is fresh before proceeding
+      await FirebaseUtils.reauthenticateIfNeeded();
+
+      final userId = _taskService.currentUserId;
+      if (userId == null) {
+        throw Exception('User not authenticated');
+      }
+
+      // Make sure the task has the current user ID
+      final taskWithUserId = task.copyWith(userId: userId);
+
+      // First add to local list for immediate UI update
+      _tasks.add(taskWithUserId);
+      notifyListeners();
+
+      // Then try to save to Firebase
+      try {
+        // Check permissions first
+        final hasPermission = await FirebaseUtils.checkDatabasePermissions();
+        if (!hasPermission) {
+          _error = 'Unable to save task to cloud: Permission denied';
+          notifyListeners();
+          return;
+        }
+
+        await _taskService.addTask(taskWithUserId);
+        debugPrint('Task added successfully: ${taskWithUserId.id}');
+      } catch (e) {
+        // If Firebase save fails, show error but keep task in local list
+        debugPrint('Error saving task to Firebase: $e');
+        _error = 'Failed to sync task to cloud: $e';
+        notifyListeners();
+
+        // Handle specific Firebase errors
+        if (e.toString().contains('permission-denied')) {
+          _error =
+              'Permission denied when saving task. Please check your connection and try again.';
+        }
       }
     } catch (e) {
-      _error = 'Failed to save tasks: $e';
-      debugPrint(_error);
+      debugPrint('Failed to add task: $e');
+      _error = 'Failed to add task: $e';
+    } finally {
+      _isLoading = false;
+      notifyListeners();
     }
+  }
+
+  Future<void> updateTaskInFirebase(Task task) async {
+    try {
+      _isLoading = true;
+      notifyListeners();
+
+      await _taskService.updateTask(task);
+
+      _isLoading = false;
+      notifyListeners();
+    } catch (e) {
+      _error = 'Failed to update task: $e';
+      _isLoading = false;
+      debugPrint(_error);
+      notifyListeners();
+    }
+  }
+
+  Future<void> deleteTaskFromFirebase(String taskId) async {
+    try {
+      _isLoading = true;
+      notifyListeners();
+
+      await _taskService.deleteTask(taskId);
+
+      _isLoading = false;
+      notifyListeners();
+    } catch (e) {
+      _error = 'Failed to delete task: $e';
+      _isLoading = false;
+      debugPrint(_error);
+      notifyListeners();
+    }
+  }
+
+  Future<void> toggleTaskCompletion(String taskId, bool isCompleted) async {
+    try {
+      _isLoading = true;
+      notifyListeners();
+
+      await _taskService.toggleTaskCompletion(taskId, isCompleted);
+
+      // Update local stats
+      if (isCompleted) {
+        _updateTaskCompletionStats();
+      }
+
+      _isLoading = false;
+      notifyListeners();
+    } catch (e) {
+      _error = 'Failed to toggle task completion: $e';
+      _isLoading = false;
+      debugPrint(_error);
+      notifyListeners();
+    }
+  }
+
+  void _updateTaskCompletionStats() {
+    final now = DateTime.now();
+
+    // Update session completions
+    _tasksCompletedInSession++;
+    _prefs.setInt('tasksCompletedInSession', _tasksCompletedInSession);
+
+    // Update streak
+    _updateStreak(now);
+
+    // Update last completion time
+    _lastTaskCompletionTime = now;
+    _prefs.setString('lastTaskCompletionDate', now.toIso8601String());
+
+    // Save stats
+    _saveUserStats();
+  }
+
+  void _updateStreak(DateTime now) {
+    if (_lastCompletionDate == null) {
+      // First completion
+      _streak = 1;
+    } else {
+      final difference = now.difference(_lastCompletionDate!).inDays;
+
+      if (difference == 0) {
+        // Same day, streak unchanged
+      } else if (difference == 1) {
+        // Next day, increment streak
+        _streak++;
+      } else {
+        // Streak broken
+        _streak = 1;
+      }
+    }
+
+    _lastCompletionDate = now;
+    _prefs.setString('lastCompletionDate', now.toIso8601String());
+    _prefs.setInt('streak', _streak);
+  }
+
+  void _saveUserStats() {
+    _prefs.setInt('totalXP', _totalXP);
+    _prefs.setInt('currentLevel', _currentLevel);
+    _prefs.setInt('streak', _streak);
+    _prefs.setInt('tasksCompletedInSession', _tasksCompletedInSession);
   }
 
   bool _validateTitle(String title) {
@@ -142,46 +302,26 @@ class TaskProvider extends ChangeNotifier {
     return true;
   }
 
-  void addTask(Task task) {
-    _tasks.add(task);
-    notifyListeners();
-  }
-
   void deleteTask(String taskId) {
     _tasks.removeWhere((task) => task.id == taskId);
     notifyListeners();
   }
 
-  void toggleTaskCompletion(String taskId) {
-    final taskIndex = _tasks.indexWhere((task) => task.id == taskId);
-    if (taskIndex != -1) {
-      final task = _tasks[taskIndex];
-      final isCompleted = !task.isCompleted;
-      _tasks[taskIndex] = task.copyWith(
-        isCompleted: isCompleted,
-        completedAt: isCompleted ? DateTime.now() : null,
-      );
-
-      if (isCompleted) {
-        _totalXP += task.xpEarned;
-        _updateLevel();
-      } else {
-        _totalXP -= task.xpEarned;
-        _updateLevel();
-      }
-
-      _saveTasks(); // Save immediately after toggling
-      notifyListeners();
-    }
-  }
-
   void toggleSubtaskCompletion(String taskId, String subtaskId) {
+    debugPrint('Toggling subtask completion: task=$taskId, subtask=$subtaskId');
+
     final taskIndex = _tasks.indexWhere((t) => t.id == taskId);
     if (taskIndex != -1) {
       final task = _tasks[taskIndex];
+      debugPrint(
+          'Found task: ${task.id}, subtasks count: ${task.subtasks.length}');
+
       final subtaskIndex = task.subtasks.indexWhere((s) => s.id == subtaskId);
       if (subtaskIndex != -1) {
         final subtask = task.subtasks[subtaskIndex];
+        debugPrint(
+            'Found subtask: ${subtask.id}, current completion status: ${subtask.isCompleted}');
+
         final updatedSubtask =
             subtask.copyWith(isCompleted: !subtask.isCompleted);
         final updatedSubtasks = List<Subtask>.from(task.subtasks);
@@ -190,6 +330,7 @@ class TaskProvider extends ChangeNotifier {
         // Check if all subtasks are completed
         final allSubtasksCompleted =
             updatedSubtasks.every((s) => s.isCompleted);
+        debugPrint('All subtasks completed: $allSubtasksCompleted');
 
         // Create updated task with completed status and timestamp
         final updatedTask = task.copyWith(
@@ -199,30 +340,46 @@ class TaskProvider extends ChangeNotifier {
         );
 
         _tasks[taskIndex] = updatedTask;
+        debugPrint(
+            'Updated task completion status: ${updatedTask.isCompleted}');
 
         // Award XP when all subtasks are completed
         if (allSubtasksCompleted && !task.isCompleted) {
           _totalXP += task.xpEarned;
           _updateLevel();
           _tasksCompletedInSession++;
+          debugPrint('Awarded XP: ${task.xpEarned}, new total: $_totalXP');
         }
         // Remove XP if uncompleting the last subtask
         else if (!allSubtasksCompleted && task.isCompleted) {
           _totalXP -= task.xpEarned;
           _updateLevel();
           _tasksCompletedInSession = math.max(0, _tasksCompletedInSession - 1);
+          debugPrint('Removed XP: ${task.xpEarned}, new total: $_totalXP');
         }
 
-        _saveTasks(); // Save immediately after toggling subtask
+        _saveUserStats(); // Save immediately after toggling subtask
         notifyListeners();
+
+        // Update Firebase
+        debugPrint('Updating task in Firebase');
+        _taskService.updateTask(updatedTask).then((_) {
+          debugPrint('Successfully updated task in Firebase');
+        }).catchError((error) {
+          debugPrint('Error updating task in Firebase: $error');
+        });
+      } else {
+        debugPrint('Subtask not found: $subtaskId');
       }
+    } else {
+      debugPrint('Task not found: $taskId');
     }
   }
 
   void addXP(int amount) {
     _totalXP += amount;
     _updateLevel();
-    _saveTasks(); // Save after updating XP
+    _saveUserStats(); // Save after updating XP
     notifyListeners();
   }
 
@@ -329,14 +486,14 @@ class TaskProvider extends ChangeNotifier {
         .isAtSameMomentAs(today.subtract(const Duration(days: 1)))) {
       _streak++;
       _lastCompletionDate = today;
-      _saveTasks();
+      _saveUserStats();
       return _streak >= 7;
     }
 
     // If the last completion was more than 1 day ago, reset streak
     _streak = 1;
     _lastCompletionDate = today;
-    _saveTasks();
+    _saveUserStats();
     return false;
   }
 
@@ -361,14 +518,14 @@ class TaskProvider extends ChangeNotifier {
         .isAtSameMomentAs(today.subtract(const Duration(days: 1)))) {
       _streak++;
       _lastCompletionDate = today;
-      _saveTasks();
+      _saveUserStats();
       return _streak;
     }
 
     // If the last completion was more than 1 day ago, reset streak
     _streak = 1;
     _lastCompletionDate = today;
-    _saveTasks();
+    _saveUserStats();
     return _streak;
   }
 
@@ -438,36 +595,86 @@ class TaskProvider extends ChangeNotifier {
 
   Future<void> addSubtasksToTask(
       String taskId, List<String> subtaskTitles) async {
-    final taskIndex = _tasks.indexWhere((task) => task.id == taskId);
-    if (taskIndex != -1) {
-      final task = _tasks[taskIndex];
-      final subtasks = subtaskTitles
-          .map((title) => Subtask(
-                id: const Uuid().v4(),
-                title: title,
-                isCompleted: false,
-              ))
-          .toList();
-      _tasks[taskIndex] = task.copyWith(subtasks: subtasks);
+    try {
+      final taskIndex = _tasks.indexWhere((task) => task.id == taskId);
+      if (taskIndex != -1) {
+        final task = _tasks[taskIndex];
+        final subtasks = subtaskTitles
+            .map((title) => Subtask(
+                  id: const Uuid().v4(),
+                  title: title,
+                  isCompleted: false,
+                ))
+            .toList();
+
+        debugPrint('Adding ${subtasks.length} subtasks to task $taskId');
+        for (var subtask in subtasks) {
+          debugPrint('Subtask: ${subtask.title} (${subtask.id})');
+        }
+
+        final updatedTask = task.copyWith(subtasks: subtasks);
+        _tasks[taskIndex] = updatedTask;
+
+        // Save to Firebase
+        await _taskService.updateTask(updatedTask);
+
+        debugPrint('Successfully saved subtasks to Firebase');
+        notifyListeners();
+      } else {
+        debugPrint('Task not found: $taskId');
+      }
+    } catch (e) {
+      debugPrint('Error adding subtasks to task: $e');
+      _error = 'Failed to add subtasks: $e';
       notifyListeners();
     }
   }
 
   void updateTaskDifficulty(String taskId, TaskDifficulty difficulty) {
+    debugPrint(
+        'Updating task difficulty: task=$taskId, difficulty=$difficulty');
+
     final taskIndex = _tasks.indexWhere((task) => task.id == taskId);
     if (taskIndex != -1) {
       final task = _tasks[taskIndex];
-      _tasks[taskIndex] = task.copyWith(difficulty: difficulty);
+      final updatedTask = task.copyWith(difficulty: difficulty);
+      _tasks[taskIndex] = updatedTask;
+
+      // Save to Firebase
+      debugPrint('Saving updated task difficulty to Firebase');
+      _taskService.updateTask(updatedTask).then((_) {
+        debugPrint('Successfully saved task difficulty to Firebase');
+      }).catchError((error) {
+        debugPrint('Error saving task difficulty to Firebase: $error');
+      });
+
       notifyListeners();
+    } else {
+      debugPrint('Task not found: $taskId');
     }
   }
 
   void updateTaskXP(String taskId, int xp) {
+    debugPrint('Updating task XP: task=$taskId, xp=$xp');
+
     final taskIndex = _tasks.indexWhere((task) => task.id == taskId);
     if (taskIndex != -1) {
       final task = _tasks[taskIndex];
-      _tasks[taskIndex] = task.copyWith(xpEarned: xp);
-      notifyListeners();
+      final updatedTask = task.copyWith(xpEarned: xp);
+      _tasks[taskIndex] = updatedTask;
+
+      // Save to Firebase
+      debugPrint('Saving updated task XP to Firebase');
+      _taskService.updateTask(updatedTask).then((_) {
+        debugPrint('Successfully saved task XP to Firebase');
+        notifyListeners(); // Notify listeners after successful update
+      }).catchError((error) {
+        debugPrint('Error saving task XP to Firebase: $error');
+        _error = 'Failed to update task XP: $error';
+        notifyListeners();
+      });
+    } else {
+      debugPrint('Task not found: $taskId');
     }
   }
 

@@ -1,6 +1,8 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'subtask.dart';
+import 'package:uuid/uuid.dart';
 
 enum TaskDifficulty {
   easy,
@@ -11,7 +13,9 @@ enum TaskDifficulty {
 
 class Task {
   final String id;
+  final String userId;
   final String title;
+  final String description;
   final bool isCompleted;
   final List<Subtask> subtasks;
   final int xpEarned;
@@ -22,6 +26,8 @@ class Task {
   final String? category;
   final TaskDifficulty difficulty;
   final bool isUrgent;
+  final DateTime? dueDate;
+  final int priority; // 1: Low, 2: Medium, 3: High
 
   static const int maxTitleLength = 100;
   static const int maxSubtasks = 10;
@@ -45,12 +51,16 @@ class Task {
 
   Task({
     required this.id,
+    required this.userId,
     required this.title,
-    required this.isCompleted,
+    required this.description,
+    this.isCompleted = false,
+    required this.createdAt,
+    this.dueDate,
+    this.priority = 2, // Default to medium priority
     required this.subtasks,
     required this.xpEarned,
     this.completedAt,
-    required this.createdAt,
     this.estimatedDuration,
     required this.isRecurring,
     this.category,
@@ -69,14 +79,148 @@ class Task {
                 : false,
             'Estimated duration must be between 5 and 120 minutes');
 
+  // Create a Task from a Map (from Firebase)
+  factory Task.fromMap(Map<String, dynamic> map) {
+    debugPrint('Creating Task from map: $map');
+
+    // Handle subtasks safely
+    List<Subtask> parsedSubtasks = [];
+    if (map['subtasks'] != null) {
+      try {
+        debugPrint('Subtasks data type: ${map['subtasks'].runtimeType}');
+        debugPrint('Subtasks data: ${map['subtasks']}');
+
+        if (map['subtasks'] is List) {
+          final subtasksData = map['subtasks'] as List;
+          debugPrint('Subtasks is a List with ${subtasksData.length} items');
+
+          for (var i = 0; i < subtasksData.length; i++) {
+            final subtask = subtasksData[i];
+            debugPrint('Subtask $i: $subtask (${subtask.runtimeType})');
+
+            if (subtask is Map) {
+              final subtaskMap = Map<String, dynamic>.from(subtask);
+              debugPrint('Subtask $i is a Map: $subtaskMap');
+              parsedSubtasks.add(Subtask.fromJson(subtaskMap));
+            } else if (subtask is String) {
+              debugPrint('Subtask $i is a String: $subtask');
+              parsedSubtasks.add(Subtask(
+                id: const Uuid().v4(),
+                title: subtask,
+                isCompleted: false,
+              ));
+            }
+          }
+        } else if (map['subtasks'] is Map) {
+          final subtasksMap = Map<String, dynamic>.from(map['subtasks'] as Map);
+          debugPrint('Subtasks is a Map with ${subtasksMap.length} entries');
+
+          subtasksMap.forEach((key, value) {
+            debugPrint(
+                'Subtask key: $key, value: $value (${value.runtimeType})');
+
+            if (value is Map) {
+              final subtaskMap = Map<String, dynamic>.from(value);
+              debugPrint('Subtask $key is a Map: $subtaskMap');
+              parsedSubtasks.add(Subtask.fromJson(subtaskMap));
+            } else if (value is String) {
+              debugPrint('Subtask $key is a String: $value');
+              parsedSubtasks.add(Subtask(
+                id: key,
+                title: value,
+                isCompleted: false,
+              ));
+            }
+          });
+        } else {
+          debugPrint('Subtasks is neither List nor Map: ${map['subtasks']}');
+        }
+
+        debugPrint('Final subtasks list: ${parsedSubtasks.length} items');
+      } catch (e) {
+        debugPrint('Error parsing subtasks: $e');
+      }
+    } else {
+      debugPrint('No subtasks found in map');
+    }
+
+    // Use the XP value from the map if it exists and is not 0
+    int xp = map['xpEarned'] as int? ?? 0;
+    if (xp == 0) {
+      final difficulty = TaskDifficulty.values.firstWhere(
+        (e) => e.name == map['difficulty'],
+        orElse: () => TaskDifficulty.medium,
+      );
+      final duration =
+          map['estimatedDuration'] as int? ?? 30; // Default to 30 minutes
+      xp = (durationBaseXP[duration] ?? 200) *
+          difficultyMultipliers[difficulty]!.round();
+      debugPrint(
+          'Calculated XP: $xp (duration: $duration, difficulty: ${difficulty.name})');
+    } else {
+      debugPrint('Using XP from map: $xp');
+    }
+
+    return Task(
+      id: map['id'] as String,
+      userId: map['userId'] as String,
+      title: map['title'] as String,
+      description: map['description'] as String? ?? '',
+      isCompleted: map['isCompleted'] as bool? ?? false,
+      subtasks: parsedSubtasks,
+      xpEarned: xp,
+      completedAt: map['completedAt'] != null
+          ? DateTime.fromMillisecondsSinceEpoch(map['completedAt'] as int)
+          : null,
+      createdAt: DateTime.fromMillisecondsSinceEpoch(map['createdAt'] as int),
+      estimatedDuration: map['estimatedDuration'] != null
+          ? Duration(minutes: map['estimatedDuration'] as int)
+          : null,
+      isRecurring: map['isRecurring'] as bool? ?? false,
+      category: map['category'] as String?,
+      difficulty: TaskDifficulty.values.firstWhere(
+        (e) => e.name == map['difficulty'],
+        orElse: () => TaskDifficulty.medium,
+      ),
+      isUrgent: map['isUrgent'] as bool? ?? false,
+    );
+  }
+
+  // Convert a Task to a Map (for Firebase)
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'userId': userId,
+      'title': title,
+      'description': description,
+      'isCompleted': isCompleted,
+      'createdAt': createdAt.millisecondsSinceEpoch,
+      'dueDate': dueDate?.millisecondsSinceEpoch,
+      'priority': priority,
+      'subtasks': subtasks.map((subtask) => subtask.toJson()).toList(),
+      'xpEarned': xpEarned,
+      'completedAt': completedAt?.millisecondsSinceEpoch,
+      'estimatedDuration': estimatedDuration?.inMinutes,
+      'isRecurring': isRecurring,
+      'category': category,
+      'difficulty': difficulty.name,
+      'isUrgent': isUrgent,
+    };
+  }
+
+  // Create a copy of this Task with some fields replaced
   Task copyWith({
     String? id,
+    String? userId,
     String? title,
+    String? description,
     bool? isCompleted,
+    DateTime? createdAt,
+    DateTime? dueDate,
+    int? priority,
     List<Subtask>? subtasks,
     int? xpEarned,
     DateTime? completedAt,
-    DateTime? createdAt,
     Duration? estimatedDuration,
     bool? isRecurring,
     String? category,
@@ -85,12 +229,16 @@ class Task {
   }) {
     return Task(
       id: id ?? this.id,
+      userId: userId ?? this.userId,
       title: title ?? this.title,
+      description: description ?? this.description,
       isCompleted: isCompleted ?? this.isCompleted,
+      createdAt: createdAt ?? this.createdAt,
+      dueDate: dueDate ?? this.dueDate,
+      priority: priority ?? this.priority,
       subtasks: subtasks ?? this.subtasks,
       xpEarned: xpEarned ?? this.xpEarned,
       completedAt: completedAt ?? this.completedAt,
-      createdAt: createdAt ?? this.createdAt,
       estimatedDuration: estimatedDuration ?? this.estimatedDuration,
       isRecurring: isRecurring ?? this.isRecurring,
       category: category ?? this.category,
@@ -102,7 +250,9 @@ class Task {
   Map<String, dynamic> toJson() {
     return {
       'id': id,
+      'userId': userId,
       'title': title,
+      'description': description,
       'isCompleted': isCompleted,
       'subtasks': subtasks.map((subtask) => subtask.toJson()).toList(),
       'xpEarned': xpEarned,
@@ -113,14 +263,23 @@ class Task {
       'category': category,
       'difficulty': difficulty.name,
       'isUrgent': isUrgent,
+      'dueDate': dueDate?.toIso8601String(),
+      'priority': priority,
     };
   }
 
   factory Task.fromJson(Map<String, dynamic> json) {
     return Task(
       id: json['id'] as String,
+      userId: json['userId'] as String,
       title: json['title'] as String,
+      description: json['description'] as String,
       isCompleted: json['isCompleted'] as bool,
+      createdAt: DateTime.parse(json['createdAt'] as String),
+      dueDate: json['dueDate'] != null
+          ? DateTime.parse(json['dueDate'] as String)
+          : null,
+      priority: json['priority'] as int,
       subtasks: (json['subtasks'] as List)
           .map((subtask) => Subtask.fromJson(subtask))
           .toList(),
@@ -128,7 +287,6 @@ class Task {
       completedAt: json['completedAt'] != null
           ? DateTime.parse(json['completedAt'] as String)
           : null,
-      createdAt: DateTime.parse(json['createdAt'] as String),
       estimatedDuration: json['estimatedDuration'] != null
           ? Duration(minutes: json['estimatedDuration'] as int)
           : null,
