@@ -6,6 +6,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'dart:async';
 import 'main_screen.dart';
 import '../services/firebase_auth_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -65,8 +66,15 @@ class _LoginScreenState extends State<LoginScreen> {
 
       if (user != null && mounted) {
         debugPrint('Login successful, navigating to main screen');
-        // Ensure we navigate to main screen explicitly
-        Navigator.of(context).pushReplacementNamed('/main');
+
+        // Set a flag in SharedPreferences to indicate fresh login
+        // This will be used to show the video splash
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setBool('fresh_login', true);
+        debugPrint('Set fresh_login flag to true');
+
+        // Ensure we navigate to video splash screen first
+        Navigator.of(context).pushReplacementNamed('/video_splash');
       } else {
         debugPrint('Login failed without throwing an error');
         setState(() {
@@ -112,7 +120,13 @@ class _LoginScreenState extends State<LoginScreen> {
 
       // If we got a user directly (popup flow), navigate to main screen
       if (user != null && mounted) {
-        Navigator.of(context).pushReplacementNamed('/main');
+        // Set a flag in SharedPreferences to indicate fresh login
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setBool('fresh_login', true);
+        debugPrint('Set fresh_login flag to true');
+
+        // Navigate to video splash screen instead of main screen
+        Navigator.of(context).pushReplacementNamed('/video_splash');
       }
       // If user is null, it means we're using redirect flow
       // The AuthWrapper will handle navigation automatically
