@@ -221,21 +221,89 @@ Task to analyze: ${task.title}'''
                 .map((step) {
                   final cleanStep =
                       step.replaceAll(RegExp(r'^\d+\.\s*'), '').trim();
-                  return cleanStep.length > 90
-                      ? '${cleanStep.substring(0, 90)}...'
-                      : cleanStep;
+                  return cleanStep;
                 })
                 .where((step) => step.isNotEmpty)
                 .take(3)
+                .expand((step) {
+                  // If step is very long (over 100 chars), try to break it into logical parts
+                  if (step.length > 100) {
+                    debugPrint('Splitting long subtask: ${step.length} chars');
+
+                    // Try to split by sentence boundaries first
+                    final sentences = step.split(RegExp(r'(?<=[.!?])\s+'));
+
+                    // If we have multiple sentences, return them as separate steps
+                    if (sentences.length > 1) {
+                      debugPrint(
+                          'Split into ${sentences.length} sentence-based subtasks');
+                      return sentences;
+                    }
+
+                    // If it's one long sentence, try to split by clauses/phrases
+                    final clauses = step.split(RegExp(r'(?<=[,;:])\s+'));
+                    if (clauses.length > 1) {
+                      // Group clauses to avoid too many tiny subtasks
+                      final List<String> groupedClauses = [];
+                      String currentGroup = '';
+
+                      for (final clause in clauses) {
+                        if (currentGroup.isEmpty) {
+                          currentGroup = clause;
+                        } else if ((currentGroup + clause).length < 100) {
+                          currentGroup += ', ' + clause;
+                        } else {
+                          groupedClauses.add(currentGroup);
+                          currentGroup = clause;
+                        }
+                      }
+
+                      if (currentGroup.isNotEmpty) {
+                        groupedClauses.add(currentGroup);
+                      }
+
+                      debugPrint(
+                          'Split into ${groupedClauses.length} clause-based subtasks');
+                      return groupedClauses;
+                    }
+
+                    // If still too long and no natural breaks, do a simple split
+                    if (step.length > 100) {
+                      final words = step.split(' ');
+                      final List<String> chunks = [];
+                      String currentChunk = '';
+
+                      for (final word in words) {
+                        if (currentChunk.isEmpty) {
+                          currentChunk = word;
+                        } else if ((currentChunk + ' ' + word).length < 80) {
+                          currentChunk += ' ' + word;
+                        } else {
+                          chunks.add(currentChunk);
+                          currentChunk = word;
+                        }
+                      }
+
+                      if (currentChunk.isNotEmpty) {
+                        chunks.add(currentChunk);
+                      }
+
+                      debugPrint(
+                          'Split into ${chunks.length} word-based subtasks');
+                      return chunks;
+                    }
+                  }
+
+                  // If not too long or couldn't be split effectively, return as is
+                  return [step];
+                })
                 .toList() ??
             [];
 
         if (steps.isEmpty) {
           debugPrint('No steps found in AI response');
-          final taskTitle = task.title.length > 90
-              ? '${task.title.substring(0, 90)}...'
-              : task.title;
-          return ([taskTitle], difficulty, xp);
+          // Use full task title without truncation
+          return ([task.title], difficulty, xp);
         }
 
         debugPrint('AI breakdown generated ${steps.length} subtasks');
