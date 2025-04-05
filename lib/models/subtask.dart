@@ -37,13 +37,13 @@ class Subtask {
     try {
       // Ensure we have a valid ID
       String id = json['id']?.toString() ?? const Uuid().v4();
-      
+
       // Ensure we have a valid title
       String title = json['title']?.toString() ?? '';
       if (title.isEmpty) {
         debugPrint('Warning: Empty title for subtask with ID $id');
       }
-      
+
       // Ensure we have a valid isCompleted value
       bool isCompleted = false;
       if (json['isCompleted'] != null) {
@@ -55,8 +55,9 @@ class Subtask {
           isCompleted = (json['isCompleted'] as String).toLowerCase() == 'true';
         }
       }
-      
-      debugPrint('Created Subtask: id=$id, title=$title, isCompleted=$isCompleted');
+
+      debugPrint(
+          'Created Subtask: id=$id, title=$title, isCompleted=$isCompleted');
       return Subtask(
         id: id,
         title: title,

@@ -11,6 +11,7 @@ import 'main_screen.dart';
 import 'focus_screen.dart';
 import 'package:confetti/confetti.dart';
 import 'dart:math';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class TaskListScreen extends StatefulWidget {
   const TaskListScreen({super.key});
