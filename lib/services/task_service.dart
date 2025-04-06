@@ -126,43 +126,78 @@ class TaskService {
   // Save user progress data to Firebase
   Future<void> saveUserProgress({
     required int totalXP,
+    required int todayXP,
     required int currentLevel,
     required int streak,
     required DateTime lastCompletionDate,
+    required DateTime lastDailyResetDate,
     required Map<String, bool> achievements,
   }) async {
     debugPrint('Saving user progress to Firebase');
+    debugPrint('Today\'s XP being saved: $todayXP');
 
     try {
-      await _userProgressRef.update({
+      final userId = _auth.currentUser?.uid;
+      if (userId == null) {
+        debugPrint('No current user ID available for saving progress');
+        return;
+      }
+
+      // Store directly in the progress node (not in stats subnode)
+      final progressRef =
+          _database.child('users').child(userId).child('progress');
+
+      // Update the user's progress in Firebase
+      await progressRef.update({
         'totalXP': totalXP,
+        'todayXP': todayXP,
         'currentLevel': currentLevel,
         'streak': streak,
         'lastCompletionDate': lastCompletionDate.millisecondsSinceEpoch,
-        'achievements': achievements,
+        'lastDailyResetDate': lastDailyResetDate.millisecondsSinceEpoch,
         'lastUpdated': DateTime.now().millisecondsSinceEpoch,
+        'achievements': achievements,
       });
 
-      debugPrint('Successfully saved user progress to Firebase');
+      debugPrint(
+          'Successfully saved user progress to Firebase with todayXP: $todayXP');
     } catch (e) {
       debugPrint('Error saving user progress to Firebase: $e');
-      throw Exception('Failed to save user progress: $e');
+      rethrow; // Allow the caller to handle the error
     }
   }
 
   // Get user progress from Firebase
   Future<Map<String, dynamic>?> getUserProgress() async {
+    debugPrint('Getting user progress from Firebase');
     try {
-      final snapshot = await _userProgressRef.get();
-
-      if (!snapshot.exists) {
-        debugPrint('No progress data found in Firebase');
+      final userId = _auth.currentUser?.uid;
+      if (userId == null) {
+        debugPrint('No current user ID available for getting progress');
         return null;
       }
 
-      final data = Map<String, dynamic>.from(snapshot.value as Map);
-      debugPrint('Retrieved user progress from Firebase');
-      return data;
+      // Load directly from the progress node (not from stats subnode)
+      final progressRef =
+          _database.child('users').child(userId).child('progress');
+
+      final snapshot = await progressRef.get();
+      if (snapshot.exists) {
+        final data = Map<String, dynamic>.from(snapshot.value as Map);
+        debugPrint('Retrieved user progress from Firebase: $data');
+
+        // Check if todayXP exists in the data
+        if (data.containsKey('todayXP')) {
+          debugPrint('Today\'s XP from Firebase: ${data['todayXP']}');
+        } else {
+          debugPrint('Today\'s XP field not found in Firebase data');
+        }
+
+        return data;
+      } else {
+        debugPrint('No progress data found for user $userId');
+        return null;
+      }
     } catch (e) {
       debugPrint('Error getting user progress from Firebase: $e');
       return null;

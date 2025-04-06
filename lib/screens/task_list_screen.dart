@@ -1106,7 +1106,7 @@ Task to analyze: ${task.title}'''
             ),
             SizedBox(height: 12),
             Text(
-              'Note: Your progress, XP, level, and achievements will be preserved.',
+              'Note: Your progress, XP, level, achievements, and today\'s XP will be preserved.',
               style: TextStyle(fontStyle: FontStyle.italic),
             ),
           ],
@@ -1151,7 +1151,8 @@ Task to analyze: ${task.title}'''
 
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content: Text('All tasks cleared successfully'),
+                    content: Text(
+                        'All tasks cleared while preserving your progress and today\'s XP'),
                     duration: Duration(seconds: 2),
                   ),
                 );

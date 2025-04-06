@@ -1,5 +1,4 @@
 import 'package:flutter/foundation.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../models/task.dart';
 import '../models/subtask.dart';
 import '../config/xp_config.dart';
@@ -8,13 +7,13 @@ import 'package:uuid/uuid.dart';
 import 'dart:convert';
 import 'dart:math' as math;
 import '../utils/firebase_utils.dart';
+import 'dart:async';
 
 class TaskProvider extends ChangeNotifier {
   static const int _maxTitleLength = 100;
   static const int _maxSubtasks = 10;
 
   List<Task> _tasks = [];
-  late final SharedPreferences _prefs;
   final TaskService _taskService = TaskService();
   bool _isLoading = false;
   String? _error;
@@ -23,6 +22,7 @@ class TaskProvider extends ChangeNotifier {
   int _tasksCompletedInSession = 0;
   final int _sessionCompletions = 0;
   int _totalXP = 0;
+  int _todayXP = 0;
   int _currentLevel = 1;
   int _streak = 0;
   DateTime? _lastCompletionDate;
@@ -65,9 +65,28 @@ class TaskProvider extends ChangeNotifier {
   // Add public getter for currentUserId
   String? get currentUserId => _taskService.currentUserId;
 
+  // Add lastDailyResetDate to the class fields
+  DateTime? _lastDailyResetDate;
+
   TaskProvider() {
-    _initPrefs();
+    // Initialize data from Firebase
+    _initializeData();
+  }
+
+  Future<void> _initializeData() async {
+    // Load user stats first
+    await _loadUserStats();
+
+    // Set up task listener
     _setupTaskListener();
+
+    // Check for daily reset right away
+    _checkAndUpdateDailyReset();
+
+    // Set up periodic check for daily reset (check every 15 minutes)
+    Timer.periodic(const Duration(minutes: 15), (_) {
+      _checkAndUpdateDailyReset();
+    });
   }
 
   List<Task> get tasks => _tasks;
@@ -76,16 +95,14 @@ class TaskProvider extends ChangeNotifier {
   int get sessionCompletions => _sessionCompletions;
   int get totalXP => _totalXP;
   int get currentLevel => _currentLevel;
-  int get streak => _streak;
-
-  Future<void> _initPrefs() async {
-    try {
-      _prefs = await SharedPreferences.getInstance();
-      await _loadUserStats();
-    } catch (e) {
-      _error = 'Failed to initialize storage: $e';
-      debugPrint(_error);
+  int get streak {
+    if (_streak <= 0 && _tasks.any((task) => task.isCompleted)) {
+      // If streak is 0 but we have completed tasks, force update streak
+      debugPrint(
+          '🔥 Streak is $_streak but we have completed tasks. Recalculating...');
+      _updateStreak(DateTime.now());
     }
+    return _streak;
   }
 
   void _setupTaskListener() {
@@ -108,74 +125,6 @@ class TaskProvider extends ChangeNotifier {
       _error = 'Failed to setup task listener: $e';
       debugPrint(_error);
       notifyListeners();
-    }
-  }
-
-  Future<void> _loadUserStats() async {
-    try {
-      // First try to load from Firebase
-      try {
-        final progressData = await _taskService.getUserProgress();
-        if (progressData != null) {
-          _totalXP = progressData['totalXP'] ?? 0;
-          _currentLevel = progressData['currentLevel'] ?? 1;
-          _streak = progressData['streak'] ?? 0;
-
-          if (progressData['lastCompletionDate'] != null) {
-            _lastCompletionDate = DateTime.fromMillisecondsSinceEpoch(
-                progressData['lastCompletionDate'] as int);
-          }
-
-          // Load stored achievements
-          if (progressData['achievements'] != null) {
-            final achievementsData =
-                progressData['achievements'] as Map<dynamic, dynamic>;
-            _unlockedAchievements = achievementsData
-                .map((key, value) => MapEntry(key.toString(), value as bool));
-          }
-
-          _tasksCompletedInSession = 0; // Reset for new session
-
-          debugPrint('Loaded user stats from Firebase');
-          return;
-        }
-      } catch (e) {
-        debugPrint(
-            'Failed to load user stats from Firebase, falling back to local: $e');
-      }
-
-      // Fall back to local storage if Firebase fails
-      final xp = _prefs.getInt('totalXP') ?? 0;
-      final level = _prefs.getInt('currentLevel') ?? 1;
-      final streak = _prefs.getInt('streak') ?? 0;
-      final lastCompletionStr = _prefs.getString('lastCompletionDate');
-      final tasksCompletedInSession =
-          _prefs.getInt('tasksCompletedInSession') ?? 0;
-
-      // Load achievements from local storage
-      final achievementsJson = _prefs.getString('achievements');
-      if (achievementsJson != null) {
-        try {
-          final Map<String, dynamic> achievementsMap =
-              jsonDecode(achievementsJson) as Map<String, dynamic>;
-          _unlockedAchievements =
-              achievementsMap.map((key, value) => MapEntry(key, value as bool));
-        } catch (e) {
-          debugPrint('Error parsing saved achievements: $e');
-        }
-      }
-
-      if (lastCompletionStr != null) {
-        _lastCompletionDate = DateTime.parse(lastCompletionStr);
-      }
-
-      _totalXP = xp;
-      _currentLevel = level;
-      _streak = streak;
-      _tasksCompletedInSession = tasksCompletedInSession;
-    } catch (e) {
-      _error = 'Failed to load user stats: $e';
-      debugPrint(_error);
     }
   }
 
@@ -288,9 +237,10 @@ class TaskProvider extends ChangeNotifier {
         debugPrint('Found task: ${task.title}');
         debugPrint('Task XP before: ${task.xpEarned}');
 
+        final now = DateTime.now();
         final updatedTask = task.copyWith(
           isCompleted: isCompleted,
-          completedAt: isCompleted ? DateTime.now() : null,
+          completedAt: isCompleted ? now : null,
         );
         _tasks[taskIndex] = updatedTask;
         debugPrint('Updated local task completion: ${updatedTask.isCompleted}');
@@ -303,45 +253,79 @@ class TaskProvider extends ChangeNotifier {
           final xpToAward = task.xpEarned;
           debugPrint('⭐ XP to award: $xpToAward');
           debugPrint('⭐ Total XP before: $_totalXP');
+          debugPrint('⭐ Today XP before: $_todayXP');
 
+          // Award XP to both counters
           _totalXP += xpToAward;
+          _todayXP += xpToAward;
+
           debugPrint('⭐ Total XP after: $_totalXP');
+          debugPrint('⭐ Today XP after: $_todayXP');
 
           _updateLevel();
           debugPrint('⭐ Current level after XP: $_currentLevel');
+
+          // Update streak immediately when completing a task
+          debugPrint('🔥 Updating streak for task completion');
+          _updateStreak(now);
+          debugPrint('🔥 New streak value: $_streak');
 
           // Explicitly update task stats for every completion
           await _updateTaskCompletionStats();
           debugPrint('⭐ Task completion stats updated');
 
-          // Save XP award immediately
+          // Save XP award immediately to Firebase
           await _saveUserStats();
           debugPrint('⭐ User stats saved to Firebase');
 
-          // Verify the XP was saved
+          // Verify the XP was saved correctly
           final progressData = await _taskService.getUserProgress();
           if (progressData != null) {
             final savedXP = progressData['totalXP'] ?? 0;
-            debugPrint('⭐ Verification - XP in Firebase: $savedXP');
+            final savedTodayXP = progressData['todayXP'] ?? 0;
+            final savedStreak = progressData['streak'] ?? 0;
+            debugPrint('⭐ Verification - Total XP in Firebase: $savedXP');
+            debugPrint(
+                '⭐ Verification - Today\'s XP in Firebase: $savedTodayXP');
+            debugPrint('🔥 Verification - Streak in Firebase: $savedStreak');
+
+            // Check if the saved value matches what we expect
+            if (savedTodayXP != _todayXP) {
+              debugPrint(
+                  '⚠️ WARNING: Today\'s XP mismatch! Memory: $_todayXP, Firebase: $savedTodayXP');
+            }
           } else {
             debugPrint(
                 '⚠️ Verification failed - Could not retrieve progress data');
           }
+
+          // Notify listeners to update the UI
+          notifyListeners();
         } else if (!isCompleted && task.isCompleted) {
           debugPrint(
               '⭐ REMOVING XP: Task was completed before, now is not completed');
           debugPrint('⭐ XP to remove: ${task.xpEarned}');
           debugPrint('⭐ Total XP before: $_totalXP');
+          debugPrint('⭐ Today XP before: $_todayXP');
 
           _totalXP -= task.xpEarned;
+          _todayXP = math.max(
+              0,
+              _todayXP -
+                  task.xpEarned); // Remove XP from today's counter but don't go below 0
 
           debugPrint('⭐ Total XP after: $_totalXP');
+          debugPrint('⭐ Today XP after: $_todayXP');
+
           _updateLevel();
           debugPrint('⭐ Current level after XP removal: $_currentLevel');
 
           // Save XP change immediately
           await _saveUserStats();
           debugPrint('⭐ User stats saved to Firebase after XP removal');
+
+          // Notify listeners to update the UI
+          notifyListeners();
         } else {
           debugPrint(
               '⚠️ No XP change needed. isCompleted=$isCompleted, task.isCompleted=${task.isCompleted}');
@@ -366,71 +350,98 @@ class TaskProvider extends ChangeNotifier {
 
     // Update session completions
     _tasksCompletedInSession++;
-    _prefs.setInt('tasksCompletedInSession', _tasksCompletedInSession);
 
-    // Update streak
-    _updateStreak(now);
+    // Update streak is now handled directly in toggleTaskCompletion
 
     // Update last completion time
     _lastTaskCompletionTime = now;
-    _prefs.setString('lastTaskCompletionDate', now.toIso8601String());
 
-    // Save stats
-    await _saveUserStats();
+    // We're still calling _saveUserStats() from toggleTaskCompletion
   }
 
   void _updateStreak(DateTime now) {
-    if (_lastCompletionDate == null) {
-      // First completion
-      _streak = 1;
-    } else {
-      final difference = now.difference(_lastCompletionDate!).inDays;
+    final today = DateTime(now.year, now.month, now.day);
 
-      if (difference == 0) {
-        // Same day, streak unchanged
-      } else if (difference == 1) {
+    debugPrint('🔥 STREAK UPDATE: Current streak before update: $_streak');
+
+    if (_lastCompletionDate == null) {
+      // First completion ever - start streak at 1
+      _streak = 1;
+      debugPrint('🔥 First task completion! Streak initialized to 1');
+    } else {
+      final lastCompletionDay = DateTime(
+        _lastCompletionDate!.year,
+        _lastCompletionDate!.month,
+        _lastCompletionDate!.day,
+      );
+
+      final differenceInDays = today.difference(lastCompletionDay).inDays;
+
+      debugPrint(
+          '🔥 Days since last completion: $differenceInDays (Last: ${lastCompletionDay.toString()}, Today: ${today.toString()})');
+
+      if (differenceInDays == 0) {
+        // Same day, streak unchanged but ensure at least 1
+        _streak = math.max(1, _streak);
+        debugPrint('🔥 Same day completion, streak maintained at: $_streak');
+      } else if (differenceInDays == 1) {
         // Next day, increment streak
         _streak++;
-      } else {
-        // Streak broken
+        debugPrint('🔥 Next day completion! Streak increased to: $_streak');
+      } else if (differenceInDays > 1) {
+        // Streak broken - start a new streak at 1
+        debugPrint(
+            '🔥 Streak broken (${differenceInDays} days missed). Resetting from $_streak to 1');
         _streak = 1;
       }
     }
 
-    _lastCompletionDate = now;
-    _prefs.setString('lastCompletionDate', now.toIso8601String());
-    _prefs.setInt('streak', _streak);
+    _lastCompletionDate = today;
+
+    // Always ensure streak is at least 1 when completing a task
+    if (_streak < 1) {
+      _streak = 1;
+      debugPrint('🔥 Corrected streak to minimum value of 1');
+    }
+
+    // Force save streak changes to Firebase
+    _saveUserStats();
+    debugPrint('🔥 STREAK UPDATED: New streak value: $_streak days');
   }
 
   Future<void> _saveUserStats() async {
-    // Save locally
-    _prefs.setInt('totalXP', _totalXP);
-    _prefs.setInt('currentLevel', _currentLevel);
-    _prefs.setInt('streak', _streak);
-    _prefs.setInt('tasksCompletedInSession', _tasksCompletedInSession);
+    debugPrint('🔄 Saving user stats to Firebase');
+    debugPrint(
+        '🔄 Total XP: $_totalXP, Today XP: $_todayXP, Level: $_currentLevel, Streak: $_streak');
+    debugPrint(
+        '🔄 Achievements: ${_unlockedAchievements.entries.where((e) => e.value).length} unlocked');
 
-    // Save achievements locally
     try {
-      final achievementsJson = jsonEncode(_unlockedAchievements);
-      _prefs.setString('achievements', achievementsJson);
-    } catch (e) {
-      debugPrint('Error saving achievements locally: $e');
-    }
-
-    // Save to Firebase
-    try {
-      if (_lastCompletionDate != null) {
-        await _taskService.saveUserProgress(
-          totalXP: _totalXP,
-          currentLevel: _currentLevel,
-          streak: _streak,
-          lastCompletionDate: _lastCompletionDate!,
-          achievements: _unlockedAchievements,
-        );
+      // Always save to Firebase regardless of lastCompletionDate
+      // This ensures all progress is saved to the database
+      final now = DateTime.now();
+      if (_lastCompletionDate == null) {
+        _lastCompletionDate = now; // Set a default value if null
       }
+
+      if (_lastDailyResetDate == null) {
+        _lastDailyResetDate = now; // Initialize if not set
+      }
+
+      await _taskService.saveUserProgress(
+        totalXP: _totalXP,
+        todayXP: _todayXP,
+        currentLevel: _currentLevel,
+        streak: _streak,
+        lastCompletionDate: _lastCompletionDate ?? now,
+        lastDailyResetDate: _lastDailyResetDate ?? now,
+        achievements: _unlockedAchievements,
+      );
+
+      debugPrint('✅ Successfully saved user stats to Firebase');
     } catch (e) {
-      debugPrint('Failed to save user stats to Firebase: $e');
-      // Don't fail the operation, we have local backup
+      _error = 'Failed to save user stats to Firebase: $e';
+      debugPrint('❌ $_error');
     }
   }
 
@@ -591,9 +602,27 @@ class TaskProvider extends ChangeNotifier {
 
   // Helper method to get XP earned today
   int getTodayXP() {
+    // Force check for daily reset when this method is called
+    _checkAndUpdateDailyReset();
+
+    // Log the current value for debugging
+    debugPrint('📊 Today\'s XP (from memory): $_todayXP');
+
+    // Verify today's XP is accurate - this will fix discrepancies
+    Future.microtask(() {
+      verifyTodayXP();
+    });
+
+    // Return the tracked today's XP value
+    return _todayXP;
+  }
+
+  // Helper method to get XP earned today directly from tasks
+  int _calculateTodayXPFromTasks() {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
 
+    // Find tasks completed today
     final completedTasksToday = _tasks
         .where((task) =>
             task.isCompleted &&
@@ -605,15 +634,161 @@ class TaskProvider extends ChangeNotifier {
 
     debugPrint('Found ${completedTasksToday.length} tasks completed today');
 
-    int todayXP = 0;
+    // Calculate XP from tasks
+    int calculatedTodayXP = 0;
     for (final task in completedTasksToday) {
-      todayXP += task.xpEarned;
+      calculatedTodayXP += task.xpEarned;
       debugPrint(
-          'Task "${task.title}" contributed ${task.xpEarned} XP, running total: $todayXP');
+          'Task "${task.title}" contributed ${task.xpEarned} XP, running total: $calculatedTodayXP');
     }
 
-    debugPrint('Total XP earned today: $todayXP');
-    return todayXP;
+    debugPrint(
+        'Calculated Today\'s XP (from completed tasks): $calculatedTodayXP');
+    return calculatedTodayXP;
+  }
+
+  // Run a check to verify that our todayXP counter matches completed tasks
+  Future<void> verifyTodayXP() async {
+    debugPrint('========== VERIFYING TODAY\'S XP ==========');
+
+    // Calculate XP directly from completed tasks
+    final calculatedXP = _calculateTodayXPFromTasks();
+
+    // If we have no tasks but non-zero todayXP, skip verification
+    // This happens after clearing tasks but we want to keep the XP earned today
+    if (_tasks.isEmpty && _todayXP > 0) {
+      debugPrint(
+          'No tasks but Today\'s XP is $_todayXP - keeping this value (tasks were cleared)');
+      return;
+    }
+
+    // Compare with our tracked value
+    debugPrint('Today\'s XP in memory: $_todayXP');
+    debugPrint('Today\'s XP calculated from tasks: $calculatedXP');
+
+    // Get the value from Firebase
+    final progressData = await _taskService.getUserProgress();
+    if (progressData != null && progressData.containsKey('todayXP')) {
+      final firebaseXP = progressData['todayXP'] as int? ?? 0;
+      debugPrint('Today\'s XP in Firebase: $firebaseXP');
+
+      // Check for discrepancies
+      if (calculatedXP != _todayXP || calculatedXP != firebaseXP) {
+        debugPrint('⚠️ XP DISCREPANCY DETECTED!');
+        debugPrint(
+            'Memory: $_todayXP, Firebase: $firebaseXP, Calculated: $calculatedXP');
+
+        // If the calculated value is different, it's the most accurate since it's based on actual tasks
+        if (calculatedXP != _todayXP) {
+          debugPrint('Fixing discrepancy by updating memory value');
+          _todayXP = calculatedXP;
+          notifyListeners();
+        }
+
+        if (calculatedXP != firebaseXP) {
+          debugPrint('Fixing discrepancy by updating Firebase value');
+          await _saveUserStats();
+        }
+      } else {
+        debugPrint('✅ Today\'s XP values are consistent');
+      }
+    } else {
+      debugPrint('⚠️ No todayXP found in Firebase, updating it now');
+      await _saveUserStats();
+    }
+
+    debugPrint('========== XP VERIFICATION COMPLETE ==========');
+  }
+
+  // Override refreshProgressFromFirebase to also check todayXP
+  @override
+  Future<void> refreshProgressFromFirebase() async {
+    _isLoading = true;
+    notifyListeners();
+
+    try {
+      debugPrint('Refreshing user progress from Firebase');
+      final progressData = await _taskService.getUserProgress();
+      if (progressData != null) {
+        _totalXP = progressData['totalXP'] ?? _totalXP;
+        _todayXP = progressData['todayXP'] ?? _todayXP;
+        _currentLevel = progressData['currentLevel'] ?? _currentLevel;
+        _streak = progressData['streak'] ?? _streak;
+
+        debugPrint('Refreshed user stats from Firebase');
+        debugPrint(
+            'Current XP: $_totalXP, Today\'s XP: $_todayXP, Level: $_currentLevel, XP to next level: ${getXPToNextLevel()}');
+
+        // Make sure level is up to date with XP
+        _updateLevel();
+
+        // Load stored achievements
+        if (progressData['achievements'] != null) {
+          final achievementsData =
+              progressData['achievements'] as Map<dynamic, dynamic>;
+          _unlockedAchievements = achievementsData
+              .map((key, value) => MapEntry(key.toString(), value as bool));
+        }
+
+        // Verify Today's XP calculation
+        await verifyTodayXP();
+      } else {
+        debugPrint('No progress data found in Firebase');
+      }
+    } catch (e) {
+      _error = 'Failed to refresh user progress: $e';
+      debugPrint(_error);
+    }
+
+    _isLoading = false;
+    notifyListeners();
+  }
+
+  // Check if we need to reset daily stats
+  void _checkAndUpdateDailyReset() {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+
+    // Get the last reset date from Firebase or default to null
+    final lastResetDateMillis = _lastDailyResetDate?.millisecondsSinceEpoch;
+    DateTime? lastResetDate;
+
+    if (lastResetDateMillis != null) {
+      lastResetDate = DateTime.fromMillisecondsSinceEpoch(lastResetDateMillis);
+      lastResetDate =
+          DateTime(lastResetDate.year, lastResetDate.month, lastResetDate.day);
+    }
+
+    // If there's no last reset date or it's from a previous day, we need to reset
+    if (lastResetDate == null || !lastResetDate.isAtSameMomentAs(today)) {
+      debugPrint('🔄 New day detected! Resetting daily stats...');
+
+      // Calculate days since last reset (for logging)
+      int daysMissed = 0;
+      if (lastResetDate != null) {
+        daysMissed = today.difference(lastResetDate).inDays;
+        debugPrint('🔄 $daysMissed day(s) since last reset');
+      }
+
+      // Reset today's XP counter
+      _resetTodayXP();
+
+      // Update last reset date to today
+      _lastDailyResetDate = today;
+
+      // Save to Firebase
+      _saveUserStats();
+
+      debugPrint('✅ Daily stats reset complete on ${today.toString()}');
+    }
+  }
+
+  // Reset today's XP counter
+  void _resetTodayXP() {
+    debugPrint('🔄 Resetting today\'s XP from $_todayXP to 0');
+    _todayXP = 0;
+    // Notify listeners to update the UI immediately
+    notifyListeners();
   }
 
   // Helper method to check achievements
@@ -679,70 +854,42 @@ class TaskProvider extends ChangeNotifier {
   }
 
   bool _hasSevenDayStreak() {
+    // Use current streak value directly
+    return _streak >= 7;
+  }
+
+  int _calculateCurrentStreak() {
+    // Fix for streak calculation
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
 
     if (_lastCompletionDate == null) {
-      _streak = 0;
-      return false;
+      return 0;
     }
 
-    final lastCompletion = DateTime(
+    final lastCompletionDay = DateTime(
       _lastCompletionDate!.year,
       _lastCompletionDate!.month,
       _lastCompletionDate!.day,
     );
 
-    // If the last completion was today, keep the streak
-    if (lastCompletion.isAtSameMomentAs(today)) {
-      return _streak >= 7;
-    }
+    final difference = today.difference(lastCompletionDay).inDays;
 
-    // If the last completion was yesterday, increment streak
-    if (lastCompletion
-        .isAtSameMomentAs(today.subtract(const Duration(days: 1)))) {
-      _streak++;
-      _lastCompletionDate = today;
-      _saveUserStats();
-      return _streak >= 7;
-    }
-
-    // If the last completion was more than 1 day ago, reset streak
-    _streak = 1;
-    _lastCompletionDate = today;
-    _saveUserStats();
-    return false;
-  }
-
-  int _calculateCurrentStreak() {
-    if (_lastCompletionDate == null) return 0;
-
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final lastCompletion = DateTime(
-      _lastCompletionDate!.year,
-      _lastCompletionDate!.month,
-      _lastCompletionDate!.day,
-    );
-
-    // If the last completion was today, return current streak
-    if (lastCompletion.isAtSameMomentAs(today)) {
+    // If last completion was today, return current streak
+    if (difference == 0) {
       return _streak;
     }
 
-    // If the last completion was yesterday, increment streak
-    if (lastCompletion
-        .isAtSameMomentAs(today.subtract(const Duration(days: 1)))) {
-      _streak++;
-      _lastCompletionDate = today;
-      _saveUserStats();
+    // If last completion was yesterday, we're okay
+    if (difference == 1) {
       return _streak;
     }
 
-    // If the last completion was more than 1 day ago, reset streak
-    _streak = 1;
-    _lastCompletionDate = today;
-    _saveUserStats();
+    // If more than 1 day has passed, streak is broken
+    if (difference > 1) {
+      return 0;
+    }
+
     return _streak;
   }
 
@@ -925,52 +1072,6 @@ class TaskProvider extends ChangeNotifier {
     return achievements;
   }
 
-  // Public method to refresh progress data from Firebase
-  Future<void> refreshProgressFromFirebase() async {
-    debugPrint('Refreshing progress data from Firebase');
-    _isLoading = true;
-    notifyListeners();
-
-    try {
-      final progressData = await _taskService.getUserProgress();
-      if (progressData != null) {
-        _totalXP = progressData['totalXP'] ?? _totalXP;
-        _currentLevel = progressData['currentLevel'] ?? _currentLevel;
-        _streak = progressData['streak'] ?? _streak;
-
-        if (progressData['lastCompletionDate'] != null) {
-          _lastCompletionDate = DateTime.fromMillisecondsSinceEpoch(
-              progressData['lastCompletionDate'] as int);
-        }
-
-        // Load achievements from Firebase
-        if (progressData['achievements'] != null) {
-          final achievementsData =
-              progressData['achievements'] as Map<dynamic, dynamic>;
-          _unlockedAchievements = achievementsData
-              .map((key, value) => MapEntry(key.toString(), value as bool));
-          debugPrint(
-              'Loaded ${_unlockedAchievements.length} achievements from Firebase');
-        }
-
-        debugPrint('Refreshed user stats from Firebase');
-        debugPrint(
-            'Current XP: $_totalXP, Level: $_currentLevel, XP to next level: ${getXPToNextLevel()}');
-
-        // Make sure level is up to date with XP
-        _updateLevel();
-      } else {
-        debugPrint('No progress data found in Firebase');
-      }
-    } catch (e) {
-      _error = 'Failed to refresh progress from Firebase: $e';
-      debugPrint(_error);
-    } finally {
-      _isLoading = false;
-      notifyListeners();
-    }
-  }
-
   // Method to clear all tasks
   Future<void> clearAllTasks() async {
     try {
@@ -988,6 +1089,11 @@ class TaskProvider extends ChangeNotifier {
 
       debugPrint('Clearing ${taskIds.length} tasks');
 
+      // Store the current todayXP value before clearing
+      final currentTodayXP = _todayXP;
+      debugPrint(
+          'Preserving Today\'s XP: $currentTodayXP before clearing tasks');
+
       // IMPORTANT: Make sure to check achievements BEFORE clearing tasks
       // This ensures any achievements already earned are recorded
       final achievements = checkAchievements();
@@ -1000,6 +1106,11 @@ class TaskProvider extends ChangeNotifier {
 
       // Clear local tasks for immediate UI update
       _tasks = [];
+
+      // IMPORTANT: Restore today's XP value after clearing tasks
+      _todayXP = currentTodayXP;
+      debugPrint('Restored Today\'s XP to: $_todayXP after clearing tasks');
+
       notifyListeners();
 
       // Delete tasks from Firebase
@@ -1009,7 +1120,12 @@ class TaskProvider extends ChangeNotifier {
       }
 
       // Don't reset progress data
-      // Progress and achievements will be preserved
+      // Progress, achievements, and today's XP will be preserved
+
+      // Save again to ensure todayXP is still preserved in Firebase
+      await _saveUserStats();
+      debugPrint(
+          'Saved user stats after clearing tasks to preserve Today\'s XP');
 
       _isLoading = false;
       notifyListeners();
@@ -1019,6 +1135,92 @@ class TaskProvider extends ChangeNotifier {
       debugPrint(_error);
       notifyListeners();
       throw e; // Re-throw to handle in UI
+    }
+  }
+
+  Future<void> _loadUserStats() async {
+    try {
+      debugPrint('🔄 Loading user stats from Firebase');
+      // Load directly from Firebase
+      final progressData = await _taskService.getUserProgress();
+      if (progressData != null) {
+        _totalXP = progressData['totalXP'] ?? 0;
+        _todayXP = progressData['todayXP'] ?? 0;
+        _currentLevel = progressData['currentLevel'] ?? 1;
+
+        // Make sure streak is at least 0 (not null)
+        _streak = math.max(0, progressData['streak'] ?? 0);
+
+        debugPrint('🔥 Loaded streak from Firebase: $_streak');
+        debugPrint('⭐ Loaded today\'s XP from Firebase: $_todayXP');
+
+        if (progressData['lastCompletionDate'] != null) {
+          _lastCompletionDate = DateTime.fromMillisecondsSinceEpoch(
+              progressData['lastCompletionDate'] as int);
+
+          // Check if streak should be maintained or reset based on last completion
+          final now = DateTime.now();
+          final today = DateTime(now.year, now.month, now.day);
+          final lastCompletionDay = DateTime(
+            _lastCompletionDate!.year,
+            _lastCompletionDate!.month,
+            _lastCompletionDate!.day,
+          );
+
+          final differenceInDays = today.difference(lastCompletionDay).inDays;
+
+          // If more than 1 day has passed since last completion, reset streak
+          if (differenceInDays > 1) {
+            debugPrint(
+                '🔥 More than 1 day since last completion (${differenceInDays} days). Resetting streak to 0.');
+            _streak = 0;
+            await _saveUserStats(); // Save the reset streak
+          }
+        }
+
+        // Load the lastDailyResetDate
+        if (progressData['lastDailyResetDate'] != null) {
+          _lastDailyResetDate = DateTime.fromMillisecondsSinceEpoch(
+              progressData['lastDailyResetDate'] as int);
+          debugPrint('📅 Loaded last daily reset date: $_lastDailyResetDate');
+        }
+
+        // Load stored achievements
+        if (progressData['achievements'] != null) {
+          final achievementsData =
+              progressData['achievements'] as Map<dynamic, dynamic>;
+          _unlockedAchievements = achievementsData
+              .map((key, value) => MapEntry(key.toString(), value as bool));
+        }
+
+        _tasksCompletedInSession = 0; // Reset for new session
+
+        debugPrint('✅ Loaded user stats from Firebase');
+        debugPrint(
+            '📊 XP: $_totalXP, Today\'s XP: $_todayXP, Level: $_currentLevel, Streak: $_streak');
+        debugPrint(
+            '🏆 Achievements: ${_unlockedAchievements.entries.where((e) => e.value).length} unlocked');
+
+        // Check if we need to reset daily stats
+        _checkAndUpdateDailyReset();
+      } else {
+        debugPrint('ℹ️ No progress data found in Firebase, using defaults');
+        // Initialize with default values
+        _totalXP = 0;
+        _todayXP = 0;
+        _currentLevel = 1;
+        _streak = 0;
+        _unlockedAchievements = {};
+      }
+    } catch (e) {
+      _error = 'Failed to load user stats from Firebase: $e';
+      debugPrint('❌ $_error');
+      // Initialize with default values
+      _totalXP = 0;
+      _todayXP = 0;
+      _currentLevel = 1;
+      _streak = 0;
+      _unlockedAchievements = {};
     }
   }
 }

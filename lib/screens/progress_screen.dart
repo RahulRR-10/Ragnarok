@@ -12,13 +12,31 @@ class ProgressScreen extends StatefulWidget {
 }
 
 class _ProgressScreenState extends State<ProgressScreen> {
+  final GlobalKey<RefreshIndicatorState> _refreshIndicatorKey =
+      GlobalKey<RefreshIndicatorState>();
+
+  Future<void> _refreshData() async {
+    final taskProvider = Provider.of<TaskProvider>(context, listen: false);
+    await taskProvider.refreshProgressFromFirebase();
+
+    // Show feedback
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Progress data refreshed'),
+        backgroundColor: Colors.green,
+        duration: Duration(seconds: 1),
+      ),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
     // Refresh data when screen loads
-    Future.microtask(() {
+    Future.microtask(() async {
       final taskProvider = Provider.of<TaskProvider>(context, listen: false);
-      taskProvider.refreshProgressFromFirebase();
+      await taskProvider.refreshProgressFromFirebase();
     });
   }
 
@@ -55,27 +73,33 @@ class _ProgressScreenState extends State<ProgressScreen> {
               final xpToNextLevel = taskProvider.getXPToNextLevel();
               final todayXP = taskProvider.getTodayXP();
               final achievements = taskProvider.checkAchievements();
+              final streak = taskProvider.streak;
 
               return SafeArea(
                 child: taskProvider.isLoading
                     ? const Center(child: CircularProgressIndicator())
-                    : SingleChildScrollView(
-                        padding: const EdgeInsets.all(16.0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _buildHeader(context),
-                            const SizedBox(height: 24),
-                            _buildLevelCard(context, levelTitle, currentLevel,
-                                levelProgress, xpToNextLevel),
-                            const SizedBox(height: 24),
-                            _buildStatsGrid(
-                                context, totalXP, todayXP, taskProvider.streak),
-                            const SizedBox(height: 24),
-                            _buildAchievements(context, achievements),
-                            const SizedBox(height: 24),
-                            _buildRecentTasks(context, taskProvider.tasks),
-                          ],
+                    : RefreshIndicator(
+                        key: _refreshIndicatorKey,
+                        onRefresh: _refreshData,
+                        child: SingleChildScrollView(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          padding: const EdgeInsets.all(16.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _buildHeader(context),
+                              const SizedBox(height: 24),
+                              _buildLevelCard(context, levelTitle, currentLevel,
+                                  levelProgress, xpToNextLevel),
+                              const SizedBox(height: 24),
+                              _buildStatsGrid(
+                                  context, totalXP, todayXP, streak),
+                              const SizedBox(height: 24),
+                              _buildAchievements(context, achievements),
+                              const SizedBox(height: 24),
+                              _buildRecentTasks(context, taskProvider.tasks),
+                            ],
+                          ),
                         ),
                       ),
               );
@@ -103,28 +127,8 @@ class _ProgressScreenState extends State<ProgressScreen> {
             IconButton(
               icon: const Icon(Icons.refresh),
               tooltip: 'Force Refresh Progress',
-              onPressed: () async {
-                // Show loading indicator
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Force refreshing progress data...'),
-                    duration: Duration(milliseconds: 1000),
-                  ),
-                );
-
-                // Force refresh
-                final taskProvider =
-                    Provider.of<TaskProvider>(context, listen: false);
-                await taskProvider.refreshProgressFromFirebase();
-
-                // Show success feedback
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Progress data refreshed'),
-                    backgroundColor: Colors.green,
-                    duration: Duration(seconds: 1),
-                  ),
-                );
+              onPressed: () {
+                _refreshIndicatorKey.currentState?.show();
               },
             ),
           ],
@@ -221,6 +225,16 @@ class _ProgressScreenState extends State<ProgressScreen> {
 
   Widget _buildStatsGrid(
       BuildContext context, int totalXP, int todayXP, int streak) {
+    // Special formatting for streak display
+    String streakDisplay;
+    if (streak <= 0) {
+      streakDisplay = "Start today!";
+    } else if (streak == 1) {
+      streakDisplay = "1 day";
+    } else {
+      streakDisplay = "$streak days";
+    }
+
     return GridView.count(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
@@ -245,7 +259,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
         _buildStatCard(
           context,
           'Streak',
-          '$streak days',
+          streakDisplay,
           Icons.local_fire_department,
           Colors.amber[300]!,
         ),
