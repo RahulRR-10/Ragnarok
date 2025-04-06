@@ -887,6 +887,18 @@ Task to analyze: ${task.title}'''
 
                               // Mark the task as completed in Firebase
                               final taskProvider = context.read<TaskProvider>();
+                              final currentTask = taskProvider.tasks
+                                  .firstWhere((t) => t.id == task.id);
+
+                              // Directly award XP before marking task complete
+                              if (!currentTask.isCompleted) {
+                                // This explicit XP award ensures XP is updated even if Firebase is slow
+                                taskProvider.addXP(currentTask.xpEarned);
+                                debugPrint(
+                                    'Explicitly awarded ${currentTask.xpEarned} XP for quick complete');
+                              }
+
+                              // Now toggle task completion
                               await taskProvider.toggleTaskCompletion(
                                   task.id, true);
 

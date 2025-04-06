@@ -269,16 +269,25 @@ class TaskProvider extends ChangeNotifier {
 
   Future<void> toggleTaskCompletion(String taskId, bool isCompleted) async {
     try {
+      debugPrint('========== TOGGLE TASK COMPLETION ==========');
+      debugPrint('Task ID: $taskId, Completed: $isCompleted');
+      final userId = _taskService.currentUserId;
+      debugPrint('Current User ID: $userId');
+
       _isLoading = true;
       notifyListeners();
 
       // First update Firebase
       await _taskService.toggleTaskCompletion(taskId, isCompleted);
+      debugPrint('Successfully updated task completion in Firebase');
 
       // Then update local task list
       final taskIndex = _tasks.indexWhere((task) => task.id == taskId);
       if (taskIndex != -1) {
         final task = _tasks[taskIndex];
+        debugPrint('Found task: ${task.title}');
+        debugPrint('Task XP before: ${task.xpEarned}');
+
         final updatedTask = task.copyWith(
           isCompleted: isCompleted,
           completedAt: isCompleted ? DateTime.now() : null,
@@ -288,39 +297,66 @@ class TaskProvider extends ChangeNotifier {
 
         // Award or remove XP based on completion status
         if (isCompleted && !task.isCompleted) {
-          debugPrint('Awarding XP for task: ${task.title}');
-          debugPrint('Task XP before award: ${task.xpEarned}');
+          debugPrint(
+              '⭐ AWARDING XP: Task was not completed before, now is completed');
 
-          _totalXP += task.xpEarned;
+          final xpToAward = task.xpEarned;
+          debugPrint('⭐ XP to award: $xpToAward');
+          debugPrint('⭐ Total XP before: $_totalXP');
 
-          debugPrint('Awarded XP: ${task.xpEarned}, new total: $_totalXP');
+          _totalXP += xpToAward;
+          debugPrint('⭐ Total XP after: $_totalXP');
+
           _updateLevel();
+          debugPrint('⭐ Current level after XP: $_currentLevel');
 
           // Explicitly update task stats for every completion
           await _updateTaskCompletionStats();
+          debugPrint('⭐ Task completion stats updated');
 
           // Save XP award immediately
           await _saveUserStats();
+          debugPrint('⭐ User stats saved to Firebase');
 
-          debugPrint('XP award saved. Current XP: $_totalXP');
+          // Verify the XP was saved
+          final progressData = await _taskService.getUserProgress();
+          if (progressData != null) {
+            final savedXP = progressData['totalXP'] ?? 0;
+            debugPrint('⭐ Verification - XP in Firebase: $savedXP');
+          } else {
+            debugPrint(
+                '⚠️ Verification failed - Could not retrieve progress data');
+          }
         } else if (!isCompleted && task.isCompleted) {
+          debugPrint(
+              '⭐ REMOVING XP: Task was completed before, now is not completed');
+          debugPrint('⭐ XP to remove: ${task.xpEarned}');
+          debugPrint('⭐ Total XP before: $_totalXP');
+
           _totalXP -= task.xpEarned;
-          debugPrint('Removed XP: ${task.xpEarned}, new total: $_totalXP');
+
+          debugPrint('⭐ Total XP after: $_totalXP');
           _updateLevel();
+          debugPrint('⭐ Current level after XP removal: $_currentLevel');
 
           // Save XP change immediately
           await _saveUserStats();
+          debugPrint('⭐ User stats saved to Firebase after XP removal');
+        } else {
+          debugPrint(
+              '⚠️ No XP change needed. isCompleted=$isCompleted, task.isCompleted=${task.isCompleted}');
         }
       } else {
-        debugPrint('Task not found for XP award: $taskId');
+        debugPrint('⚠️ ERROR: Task not found for XP award: $taskId');
       }
 
       _isLoading = false;
       notifyListeners();
+      debugPrint('========== TOGGLE TASK COMPLETION FINISHED ==========');
     } catch (e) {
       _error = 'Failed to toggle task completion: $e';
       _isLoading = false;
-      debugPrint(_error);
+      debugPrint('⚠️ ERROR: $_error');
       notifyListeners();
     }
   }
@@ -488,11 +524,34 @@ class TaskProvider extends ChangeNotifier {
     }
   }
 
-  void addXP(int amount) {
+  Future<void> addXP(int amount) async {
+    debugPrint('📊 DIRECTLY ADDING XP: $amount');
+    debugPrint('📊 Total XP before: $_totalXP');
+
     _totalXP += amount;
+    debugPrint('📊 Total XP after: $_totalXP');
+
     _updateLevel();
-    _saveUserStats(); // Save after updating XP
+    debugPrint('📊 Current level after XP addition: $_currentLevel');
+
+    // Save to both local storage and Firebase
+    await _saveUserStats();
+    debugPrint('📊 Saved updated XP to storage');
+
+    // Update UI
     notifyListeners();
+
+    // Verify save worked by reading back
+    try {
+      final progressData = await _taskService.getUserProgress();
+      if (progressData != null) {
+        final savedXP = progressData['totalXP'] ?? 0;
+        debugPrint(
+            '📊 Verification - XP in Firebase after direct add: $savedXP');
+      }
+    } catch (e) {
+      debugPrint('📊 Error verifying XP save: $e');
+    }
   }
 
   void _updateLevel() {

@@ -97,14 +97,37 @@ class _ProgressScreenState extends State<ProgressScreen> {
                 color: Colors.amber[300],
               ),
         ),
-        IconButton(
-          icon: const Icon(Icons.refresh),
-          onPressed: () {
-            // Refresh progress
-            final taskProvider =
-                Provider.of<TaskProvider>(context, listen: false);
-            taskProvider.refreshProgressFromFirebase();
-          },
+        Row(
+          children: [
+            // Force refresh button with improved feedback
+            IconButton(
+              icon: const Icon(Icons.refresh),
+              tooltip: 'Force Refresh Progress',
+              onPressed: () async {
+                // Show loading indicator
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Force refreshing progress data...'),
+                    duration: Duration(milliseconds: 1000),
+                  ),
+                );
+
+                // Force refresh
+                final taskProvider =
+                    Provider.of<TaskProvider>(context, listen: false);
+                await taskProvider.refreshProgressFromFirebase();
+
+                // Show success feedback
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Progress data refreshed'),
+                    backgroundColor: Colors.green,
+                    duration: Duration(seconds: 1),
+                  ),
+                );
+              },
+            ),
+          ],
         ),
       ],
     );
