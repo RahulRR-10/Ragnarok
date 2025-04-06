@@ -83,6 +83,7 @@ class MyApp extends StatelessWidget {
       ],
       child: MaterialApp(
         title: 'ADHD Task Manager',
+        debugShowCheckedModeBanner: false,
         theme: ThemeData(
           colorScheme: ColorScheme.fromSeed(
             seedColor: const Color(0xFF9575CD), // Lighter purple
@@ -127,10 +128,10 @@ class MyApp extends StatelessWidget {
           '/settings': (context) => const SettingsScreen(),
           '/progress': (context) => const ProgressScreen(),
           '/video_splash': (context) => SplashScreen(
-  onSplashEnd: () {
-    Navigator.pushReplacementNamed(context, '/main');
-  },
-),
+                onSplashEnd: () {
+                  Navigator.pushReplacementNamed(context, '/main');
+                },
+              ),
         },
       ),
     );
@@ -216,10 +217,10 @@ class _AuthWrapperState extends State<AuthWrapper> {
               // Mark that we're showing the video splash
               _videoSplashShown = true;
               return SplashScreen(
-  onSplashEnd: () {
-    Navigator.pushReplacementNamed(context, '/main');
-  },
-);
+                onSplashEnd: () {
+                  Navigator.pushReplacementNamed(context, '/main');
+                },
+              );
             } else {
               debugPrint(
                   'User is authenticated, showing main screen (not fresh login or splash already shown)');
