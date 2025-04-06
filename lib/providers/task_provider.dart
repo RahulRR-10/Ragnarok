@@ -26,6 +26,8 @@ class TaskProvider extends ChangeNotifier {
   int _currentLevel = 1;
   int _streak = 0;
   DateTime? _lastCompletionDate;
+  Map<String, bool> _unlockedAchievements =
+      {}; // Store permanently unlocked achievements
 
   static const int BASE_XP = 100;
   static const int SUBTASK_XP = 50;
@@ -124,6 +126,14 @@ class TaskProvider extends ChangeNotifier {
                 progressData['lastCompletionDate'] as int);
           }
 
+          // Load stored achievements
+          if (progressData['achievements'] != null) {
+            final achievementsData =
+                progressData['achievements'] as Map<dynamic, dynamic>;
+            _unlockedAchievements = achievementsData
+                .map((key, value) => MapEntry(key.toString(), value as bool));
+          }
+
           _tasksCompletedInSession = 0; // Reset for new session
 
           debugPrint('Loaded user stats from Firebase');
@@ -141,6 +151,19 @@ class TaskProvider extends ChangeNotifier {
       final lastCompletionStr = _prefs.getString('lastCompletionDate');
       final tasksCompletedInSession =
           _prefs.getInt('tasksCompletedInSession') ?? 0;
+
+      // Load achievements from local storage
+      final achievementsJson = _prefs.getString('achievements');
+      if (achievementsJson != null) {
+        try {
+          final Map<String, dynamic> achievementsMap =
+              jsonDecode(achievementsJson) as Map<String, dynamic>;
+          _unlockedAchievements =
+              achievementsMap.map((key, value) => MapEntry(key, value as bool));
+        } catch (e) {
+          debugPrint('Error parsing saved achievements: $e');
+        }
+      }
 
       if (lastCompletionStr != null) {
         _lastCompletionDate = DateTime.parse(lastCompletionStr);
@@ -249,11 +272,47 @@ class TaskProvider extends ChangeNotifier {
       _isLoading = true;
       notifyListeners();
 
+      // First update Firebase
       await _taskService.toggleTaskCompletion(taskId, isCompleted);
 
-      // Update local stats
-      if (isCompleted) {
-        await _updateTaskCompletionStats();
+      // Then update local task list
+      final taskIndex = _tasks.indexWhere((task) => task.id == taskId);
+      if (taskIndex != -1) {
+        final task = _tasks[taskIndex];
+        final updatedTask = task.copyWith(
+          isCompleted: isCompleted,
+          completedAt: isCompleted ? DateTime.now() : null,
+        );
+        _tasks[taskIndex] = updatedTask;
+        debugPrint('Updated local task completion: ${updatedTask.isCompleted}');
+
+        // Award or remove XP based on completion status
+        if (isCompleted && !task.isCompleted) {
+          debugPrint('Awarding XP for task: ${task.title}');
+          debugPrint('Task XP before award: ${task.xpEarned}');
+
+          _totalXP += task.xpEarned;
+
+          debugPrint('Awarded XP: ${task.xpEarned}, new total: $_totalXP');
+          _updateLevel();
+
+          // Explicitly update task stats for every completion
+          await _updateTaskCompletionStats();
+
+          // Save XP award immediately
+          await _saveUserStats();
+
+          debugPrint('XP award saved. Current XP: $_totalXP');
+        } else if (!isCompleted && task.isCompleted) {
+          _totalXP -= task.xpEarned;
+          debugPrint('Removed XP: ${task.xpEarned}, new total: $_totalXP');
+          _updateLevel();
+
+          // Save XP change immediately
+          await _saveUserStats();
+        }
+      } else {
+        debugPrint('Task not found for XP award: $taskId');
       }
 
       _isLoading = false;
@@ -314,6 +373,14 @@ class TaskProvider extends ChangeNotifier {
     _prefs.setInt('streak', _streak);
     _prefs.setInt('tasksCompletedInSession', _tasksCompletedInSession);
 
+    // Save achievements locally
+    try {
+      final achievementsJson = jsonEncode(_unlockedAchievements);
+      _prefs.setString('achievements', achievementsJson);
+    } catch (e) {
+      debugPrint('Error saving achievements locally: $e');
+    }
+
     // Save to Firebase
     try {
       if (_lastCompletionDate != null) {
@@ -322,7 +389,7 @@ class TaskProvider extends ChangeNotifier {
           currentLevel: _currentLevel,
           streak: _streak,
           lastCompletionDate: _lastCompletionDate!,
-          achievements: checkAchievements(),
+          achievements: _unlockedAchievements,
         );
       }
     } catch (e) {
@@ -509,7 +576,8 @@ class TaskProvider extends ChangeNotifier {
         _tasks.where((task) => task.subtasks.isNotEmpty).length;
     final completedSubtasks = _getCompletedSubtasksCount();
 
-    return {
+    // First create a map with current state calculations
+    final currentState = {
       'first_task': completedTasks >= achievementThresholds['first_task']!,
       'streak_master': _hasSevenDayStreak(),
       'subtask_star':
@@ -525,6 +593,30 @@ class TaskProvider extends ChangeNotifier {
       'consistent_planner':
           tasksWithAIBreakdown >= achievementThresholds['consistent_planner']!,
     };
+
+    // Find any new achievements to unlock
+    for (final achievement in currentState.keys) {
+      if (currentState[achievement] == true) {
+        _unlockedAchievements[achievement] = true;
+      }
+    }
+
+    // Build the final achievements map from our stored unlocked achievements
+    // This ensures achievements stay unlocked even when tasks are cleared
+    final Map<String, bool> finalAchievements = {
+      'first_task': _unlockedAchievements['first_task'] ?? false,
+      'streak_master': _unlockedAchievements['streak_master'] ?? false,
+      'subtask_star': _unlockedAchievements['subtask_star'] ?? false,
+      'task_master': _unlockedAchievements['task_master'] ?? false,
+      'epic_warrior': _unlockedAchievements['epic_warrior'] ?? false,
+      'daily_champion': _unlockedAchievements['daily_champion'] ?? false,
+      'xp_master': _unlockedAchievements['xp_master'] ?? false,
+      'quick_completer': _unlockedAchievements['quick_completer'] ?? false,
+      'consistent_planner':
+          _unlockedAchievements['consistent_planner'] ?? false,
+    };
+
+    return finalAchievements;
   }
 
   bool _hasSevenDayStreak() {
@@ -792,6 +884,16 @@ class TaskProvider extends ChangeNotifier {
               progressData['lastCompletionDate'] as int);
         }
 
+        // Load achievements from Firebase
+        if (progressData['achievements'] != null) {
+          final achievementsData =
+              progressData['achievements'] as Map<dynamic, dynamic>;
+          _unlockedAchievements = achievementsData
+              .map((key, value) => MapEntry(key.toString(), value as bool));
+          debugPrint(
+              'Loaded ${_unlockedAchievements.length} achievements from Firebase');
+        }
+
         debugPrint('Refreshed user stats from Firebase');
         debugPrint(
             'Current XP: $_totalXP, Level: $_currentLevel, XP to next level: ${getXPToNextLevel()}');
@@ -807,6 +909,57 @@ class TaskProvider extends ChangeNotifier {
     } finally {
       _isLoading = false;
       notifyListeners();
+    }
+  }
+
+  // Method to clear all tasks
+  Future<void> clearAllTasks() async {
+    try {
+      _isLoading = true;
+      notifyListeners();
+
+      // Get all task IDs
+      final taskIds = _tasks.map((task) => task.id).toList();
+
+      if (taskIds.isEmpty) {
+        _isLoading = false;
+        notifyListeners();
+        return;
+      }
+
+      debugPrint('Clearing ${taskIds.length} tasks');
+
+      // IMPORTANT: Make sure to check achievements BEFORE clearing tasks
+      // This ensures any achievements already earned are recorded
+      final achievements = checkAchievements();
+      final unlockedCount = achievements.entries.where((e) => e.value).length;
+      debugPrint(
+          'Preserving $unlockedCount achievements before clearing tasks');
+
+      // Save progress and achievements immediately to ensure they're preserved
+      await _saveUserStats();
+
+      // Clear local tasks for immediate UI update
+      _tasks = [];
+      notifyListeners();
+
+      // Delete tasks from Firebase
+      for (final taskId in taskIds) {
+        await _taskService.deleteTask(taskId);
+        debugPrint('Deleted task: $taskId');
+      }
+
+      // Don't reset progress data
+      // Progress and achievements will be preserved
+
+      _isLoading = false;
+      notifyListeners();
+    } catch (e) {
+      _error = 'Failed to clear tasks: $e';
+      _isLoading = false;
+      debugPrint(_error);
+      notifyListeners();
+      throw e; // Re-throw to handle in UI
     }
   }
 }

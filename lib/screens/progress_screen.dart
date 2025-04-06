@@ -23,6 +23,14 @@ class _ProgressScreenState extends State<ProgressScreen> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // This ensures progress data is refreshed whenever the screen becomes visible
+    final taskProvider = Provider.of<TaskProvider>(context, listen: false);
+    taskProvider.refreshProgressFromFirebase();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return NavigationWrapper(
       initialIndex: 2,

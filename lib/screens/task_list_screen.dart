@@ -581,6 +581,13 @@ Task to analyze: ${task.title}'''
               elevation: 0,
               actions: [
                 IconButton(
+                  icon: const Icon(Icons.clear_all),
+                  tooltip: 'Clear All Tasks',
+                  onPressed: () {
+                    _showClearTasksConfirmation();
+                  },
+                ),
+                IconButton(
                   icon: const Icon(Icons.settings),
                   onPressed: () {
                     // TODO: Navigate to settings screen
@@ -660,6 +667,30 @@ Task to analyze: ${task.title}'''
               ],
             ),
           ),
+          // Loading overlay
+          if (_isLoading)
+            Container(
+              color: Colors.black54,
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const CircularProgressIndicator(
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.amber),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Processing...',
+                      style: TextStyle(
+                        color: Colors.amber[300],
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -836,13 +867,65 @@ Task to analyze: ${task.title}'''
                         ),
                         const SizedBox(width: 8),
                         _buildActionButton(
-                          onPressed: () {
-                            context.read<TaskProvider>().toggleTaskCompletion(
-                                task.id, !task.isCompleted);
-                            if (!task.isCompleted) {
-                              _showCompletionPopup(task);
+                          onPressed: () async {
+                            try {
+                              // First check if the task is already completed to avoid double completion
+                              if (task.isCompleted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Task is already completed'),
+                                    duration: Duration(seconds: 2),
+                                  ),
+                                );
+                                return;
+                              }
+
+                              // Set loading state
+                              setState(() {
+                                _isLoading = true;
+                              });
+
+                              // Mark the task as completed in Firebase
+                              final taskProvider = context.read<TaskProvider>();
+                              await taskProvider.toggleTaskCompletion(
+                                  task.id, true);
+
+                              // Give Firebase a bit more time to update
+                              await Future.delayed(
+                                  const Duration(milliseconds: 500));
+
+                              // Refresh progress to ensure XP is updated
+                              await taskProvider.refreshProgressFromFirebase();
+
+                              // Force UI update
+                              setState(() {
+                                _isLoading = false;
+                              });
+
+                              // Get the updated task after the state change
+                              try {
+                                final updatedTask = taskProvider.tasks
+                                    .firstWhere((t) => t.id == task.id);
+
+                                if (updatedTask.isCompleted) {
+                                  _showCompletionPopup(updatedTask);
+                                }
+                              } catch (e) {
+                                debugPrint(
+                                    'Error showing completion popup: $e');
+                              }
+                            } catch (e) {
+                              debugPrint('Error in quick complete: $e');
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Error completing task: $e'),
+                                  duration: const Duration(seconds: 2),
+                                ),
+                              );
+                              setState(() {
+                                _isLoading = false;
+                              });
                             }
-                            setState(() {}); // Force UI update after completion
                           },
                           icon: Icons.check_circle_outline,
                           label: 'Quick Complete',
@@ -994,5 +1077,90 @@ Task to analyze: ${task.title}'''
       case TaskDifficulty.epic:
         return Colors.purple;
     }
+  }
+
+  void _showClearTasksConfirmation() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Clear All Tasks'),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Are you sure you want to delete all tasks? This action cannot be undone.',
+              style: TextStyle(color: Colors.red),
+            ),
+            SizedBox(height: 12),
+            Text(
+              'Note: Your progress, XP, level, and achievements will be preserved.',
+              style: TextStyle(fontStyle: FontStyle.italic),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () async {
+              Navigator.pop(context);
+
+              final taskProvider = context.read<TaskProvider>();
+              final tasks = List<Task>.from(taskProvider.tasks);
+
+              if (tasks.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('No tasks to clear'),
+                    duration: Duration(seconds: 2),
+                  ),
+                );
+                return;
+              }
+
+              // Show loading indicator
+              setState(() {
+                _isLoading = true;
+              });
+
+              try {
+                // Use the more efficient method to clear all tasks
+                await taskProvider.clearAllTasks();
+
+                // Refresh progress data to ensure it's up to date
+                await taskProvider.refreshProgressFromFirebase();
+
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('All tasks cleared successfully'),
+                    duration: Duration(seconds: 2),
+                  ),
+                );
+              } catch (e) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Error clearing tasks: $e'),
+                    duration: const Duration(seconds: 2),
+                  ),
+                );
+              } finally {
+                // Hide loading indicator
+                setState(() {
+                  _isLoading = false;
+                });
+              }
+            },
+            child: const Text('Clear All'),
+          ),
+        ],
+      ),
+    );
   }
 }
