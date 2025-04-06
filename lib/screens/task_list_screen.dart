@@ -609,11 +609,26 @@ Task to analyze: ${task.title}'''
                     );
                   }
 
+                  // Sort tasks to show high priority first
+                  final sortedTasks = List<Task>.from(taskProvider.tasks)
+                    ..sort((a, b) {
+                      // First sort by completed (uncompleted first)
+                      if (a.isCompleted != b.isCompleted) {
+                        return a.isCompleted ? 1 : -1;
+                      }
+                      // Then sort by priority (high priority first)
+                      if (a.isUrgent != b.isUrgent) {
+                        return a.isUrgent ? -1 : 1;
+                      }
+                      // Then sort by creation date (newest first)
+                      return b.createdAt.compareTo(a.createdAt);
+                    });
+
                   return ListView.builder(
                     padding: const EdgeInsets.all(16),
-                    itemCount: taskProvider.tasks.length,
+                    itemCount: sortedTasks.length,
                     itemBuilder: (context, index) {
-                      final task = taskProvider.tasks[index];
+                      final task = sortedTasks[index];
                       return _buildTaskItem(task);
                     },
                   );
@@ -653,8 +668,20 @@ Task to analyze: ${task.title}'''
   Widget _buildTaskItem(Task task) {
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      color: Colors.deepPurple.shade50,
+      color: task.isUrgent ? Colors.amber[50] : Colors.deepPurple.shade50,
+      shape: task.isUrgent
+          ? RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(
+                color: Colors.amber[300]!,
+                width: 2.0,
+              ),
+            )
+          : RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
       child: InkWell(
+        borderRadius: BorderRadius.circular(16),
         onTap: () {
           Navigator.push(
             context,
@@ -673,190 +700,242 @@ Task to analyze: ${task.title}'''
             }
           });
         },
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(
-                    _getDifficultyIcon(task.difficulty),
-                    size: 16,
-                    color: _getDifficultyColor(task.difficulty),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    task.difficulty.name.toUpperCase(),
-                    style: TextStyle(
-                      color: _getDifficultyColor(task.difficulty),
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Colors.amber[100],
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
+        child: Stack(
+          children: [
+            Container(
+              decoration: task.isUrgent
+                  ? BoxDecoration(
+                      borderRadius: BorderRadius.circular(15),
+                      gradient: LinearGradient(
+                        begin: Alignment.topRight,
+                        end: Alignment.bottomLeft,
+                        colors: [
+                          Colors.amber[100]!,
+                          Colors.amber[50]!,
+                        ],
+                      ),
+                    )
+                  : null,
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
                       children: [
-                        Icon(Icons.star, size: 16, color: Colors.amber[700]),
-                        const SizedBox(width: 4),
+                        Icon(
+                          _getDifficultyIcon(task.difficulty),
+                          size: 16,
+                          color: _getDifficultyColor(task.difficulty),
+                        ),
+                        const SizedBox(width: 8),
                         Text(
-                          '${task.xpEarned} XP',
+                          task.difficulty.name.toUpperCase(),
                           style: TextStyle(
-                            color: Colors.amber[900],
+                            color: _getDifficultyColor(task.difficulty),
                             fontSize: 12,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
-                      ],
-                    ),
-                  ),
-                  if (task.isUrgent) ...[
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.amber[100],
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.warning_amber,
-                              size: 16, color: Colors.amber[700]),
-                          const SizedBox(width: 4),
-                          Text(
-                            'HIGH PRIORITY',
-                            style: TextStyle(
-                              color: Colors.amber[900],
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.amber[100],
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.star,
+                                  size: 16, color: Colors.amber[700]),
+                              const SizedBox(width: 4),
+                              Text(
+                                '${task.xpEarned} XP',
+                                style: TextStyle(
+                                  color: Colors.amber[900],
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        if (task.isUrgent) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.amber[100],
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.warning_amber,
+                                    size: 16, color: Colors.amber[700]),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'HIGH PRIORITY',
+                                  style: TextStyle(
+                                    color: Colors.amber[900],
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ],
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      task.title,
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.deepPurple.shade900,
+                        decoration: task.isCompleted
+                            ? TextDecoration.lineThrough
+                            : null,
+                        decorationColor: Colors.deepPurple.shade900,
+                        decorationThickness: 2,
                       ),
                     ),
+                    const SizedBox(height: 16),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        _buildActionButton(
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => FocusScreen(task: task),
+                              ),
+                            ).then((completed) {
+                              if (completed == true) {
+                                setState(() {}); // Force UI update
+                                final taskProvider =
+                                    context.read<TaskProvider>();
+                                final updatedTask = taskProvider.tasks
+                                    .firstWhere((t) => t.id == task.id);
+                                if (updatedTask.isCompleted) {
+                                  _showCompletionPopup(updatedTask);
+                                }
+                              }
+                            });
+                          },
+                          icon: Icons.emoji_nature,
+                          label: 'Focus',
+                          color: Colors.deepPurple.shade900,
+                          textColor: Colors.amber[300]!,
+                        ),
+                        const SizedBox(width: 8),
+                        _buildActionButton(
+                          onPressed: () {
+                            context.read<TaskProvider>().toggleTaskCompletion(
+                                task.id, !task.isCompleted);
+                            if (!task.isCompleted) {
+                              _showCompletionPopup(task);
+                            }
+                            setState(() {}); // Force UI update after completion
+                          },
+                          icon: Icons.check_circle_outline,
+                          label: 'Quick Complete',
+                          color: Colors.green.shade600,
+                        ),
+                        const SizedBox(width: 8),
+                        IconButton(
+                          onPressed: () {
+                            showDialog(
+                              context: context,
+                              builder: (context) => AlertDialog(
+                                title: const Text('Delete Task'),
+                                content: const Text(
+                                    'Are you sure you want to delete this task?'),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(context),
+                                    child: const Text('Cancel'),
+                                  ),
+                                  TextButton(
+                                    onPressed: () async {
+                                      Navigator.pop(context);
+                                      try {
+                                        await context
+                                            .read<TaskProvider>()
+                                            .deleteTaskFromFirebase(task.id);
+                                        ScaffoldMessenger.of(context)
+                                            .showSnackBar(
+                                          const SnackBar(
+                                            content: Text(
+                                                'Task deleted successfully'),
+                                            duration: Duration(seconds: 2),
+                                          ),
+                                        );
+                                      } catch (e) {
+                                        ScaffoldMessenger.of(context)
+                                            .showSnackBar(
+                                          SnackBar(
+                                            content:
+                                                Text('Error deleting task: $e'),
+                                            duration:
+                                                const Duration(seconds: 2),
+                                          ),
+                                        );
+                                      }
+                                    },
+                                    child: const Text('Delete'),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                          icon: const Icon(Icons.delete_outline),
+                          color: Colors.red.shade400,
+                          tooltip: 'Delete Task',
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                          iconSize: 20,
+                        ),
+                      ],
+                    ),
                   ],
-                ],
-              ),
-              const SizedBox(height: 8),
-              Text(
-                task.title,
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.deepPurple.shade900,
-                  decoration:
-                      task.isCompleted ? TextDecoration.lineThrough : null,
-                  decorationColor: Colors.deepPurple.shade900,
-                  decorationThickness: 2,
                 ),
               ),
-              const SizedBox(height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  _buildActionButton(
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => FocusScreen(task: task),
+            ),
+            if (task.isUrgent)
+              Positioned(
+                top: 8,
+                right: 8,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    Container(
+                      width: 32,
+                      height: 32,
+                      decoration: BoxDecoration(
+                        color: Colors.amber[100],
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: Colors.amber[300]!,
+                          width: 1.5,
                         ),
-                      ).then((completed) {
-                        if (completed == true) {
-                          setState(() {}); // Force UI update
-                          final taskProvider = context.read<TaskProvider>();
-                          final updatedTask = taskProvider.tasks
-                              .firstWhere((t) => t.id == task.id);
-                          if (updatedTask.isCompleted) {
-                            _showCompletionPopup(updatedTask);
-                          }
-                        }
-                      });
-                    },
-                    icon: Icons.emoji_nature,
-                    label: 'Focus',
-                    color: Colors.deepPurple.shade900,
-                    textColor: Colors.amber[300]!,
-                  ),
-                  const SizedBox(width: 8),
-                  _buildActionButton(
-                    onPressed: () {
-                      context
-                          .read<TaskProvider>()
-                          .toggleTaskCompletion(task.id, !task.isCompleted);
-                      if (!task.isCompleted) {
-                        _showCompletionPopup(task);
-                      }
-                      setState(() {}); // Force UI update after completion
-                    },
-                    icon: Icons.check_circle_outline,
-                    label: 'Quick Complete',
-                    color: Colors.green.shade600,
-                  ),
-                  const SizedBox(width: 8),
-                  IconButton(
-                    onPressed: () {
-                      showDialog(
-                        context: context,
-                        builder: (context) => AlertDialog(
-                          title: const Text('Delete Task'),
-                          content: const Text(
-                              'Are you sure you want to delete this task?'),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(context),
-                              child: const Text('Cancel'),
-                            ),
-                            TextButton(
-                              onPressed: () async {
-                                Navigator.pop(context);
-                                try {
-                                  await context
-                                      .read<TaskProvider>()
-                                      .deleteTaskFromFirebase(task.id);
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content:
-                                          Text('Task deleted successfully'),
-                                      duration: Duration(seconds: 2),
-                                    ),
-                                  );
-                                } catch (e) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text('Error deleting task: $e'),
-                                      duration: const Duration(seconds: 2),
-                                    ),
-                                  );
-                                }
-                              },
-                              child: const Text('Delete'),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                    icon: const Icon(Icons.delete_outline),
-                    color: Colors.red.shade400,
-                    tooltip: 'Delete Task',
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                    iconSize: 20,
-                  ),
-                ],
+                      ),
+                    ),
+                    Icon(
+                      Icons.emoji_nature,
+                      size: 22,
+                      color: Colors.amber[800],
+                    ),
+                  ],
+                ),
               ),
-            ],
-          ),
+          ],
         ),
       ),
     );
