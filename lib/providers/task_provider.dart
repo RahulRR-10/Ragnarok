@@ -111,6 +111,30 @@ class TaskProvider extends ChangeNotifier {
 
   Future<void> _loadUserStats() async {
     try {
+      // First try to load from Firebase
+      try {
+        final progressData = await _taskService.getUserProgress();
+        if (progressData != null) {
+          _totalXP = progressData['totalXP'] ?? 0;
+          _currentLevel = progressData['currentLevel'] ?? 1;
+          _streak = progressData['streak'] ?? 0;
+
+          if (progressData['lastCompletionDate'] != null) {
+            _lastCompletionDate = DateTime.fromMillisecondsSinceEpoch(
+                progressData['lastCompletionDate'] as int);
+          }
+
+          _tasksCompletedInSession = 0; // Reset for new session
+
+          debugPrint('Loaded user stats from Firebase');
+          return;
+        }
+      } catch (e) {
+        debugPrint(
+            'Failed to load user stats from Firebase, falling back to local: $e');
+      }
+
+      // Fall back to local storage if Firebase fails
       final xp = _prefs.getInt('totalXP') ?? 0;
       final level = _prefs.getInt('currentLevel') ?? 1;
       final streak = _prefs.getInt('streak') ?? 0;
@@ -229,7 +253,7 @@ class TaskProvider extends ChangeNotifier {
 
       // Update local stats
       if (isCompleted) {
-        _updateTaskCompletionStats();
+        await _updateTaskCompletionStats();
       }
 
       _isLoading = false;
@@ -242,7 +266,7 @@ class TaskProvider extends ChangeNotifier {
     }
   }
 
-  void _updateTaskCompletionStats() {
+  Future<void> _updateTaskCompletionStats() async {
     final now = DateTime.now();
 
     // Update session completions
@@ -257,7 +281,7 @@ class TaskProvider extends ChangeNotifier {
     _prefs.setString('lastTaskCompletionDate', now.toIso8601String());
 
     // Save stats
-    _saveUserStats();
+    await _saveUserStats();
   }
 
   void _updateStreak(DateTime now) {
@@ -283,11 +307,28 @@ class TaskProvider extends ChangeNotifier {
     _prefs.setInt('streak', _streak);
   }
 
-  void _saveUserStats() {
+  Future<void> _saveUserStats() async {
+    // Save locally
     _prefs.setInt('totalXP', _totalXP);
     _prefs.setInt('currentLevel', _currentLevel);
     _prefs.setInt('streak', _streak);
     _prefs.setInt('tasksCompletedInSession', _tasksCompletedInSession);
+
+    // Save to Firebase
+    try {
+      if (_lastCompletionDate != null) {
+        await _taskService.saveUserProgress(
+          totalXP: _totalXP,
+          currentLevel: _currentLevel,
+          streak: _streak,
+          lastCompletionDate: _lastCompletionDate!,
+          achievements: checkAchievements(),
+        );
+      }
+    } catch (e) {
+      debugPrint('Failed to save user stats to Firebase: $e');
+      // Don't fail the operation, we have local backup
+    }
   }
 
   bool _validateTitle(String title) {
@@ -349,6 +390,8 @@ class TaskProvider extends ChangeNotifier {
           _updateLevel();
           _tasksCompletedInSession++;
           debugPrint('Awarded XP: ${task.xpEarned}, new total: $_totalXP');
+          debugPrint(
+              'Updated level: $_currentLevel, XP to next level: ${getXPToNextLevel()}');
         }
         // Remove XP if uncompleting the last subtask
         else if (!allSubtasksCompleted && task.isCompleted) {
@@ -356,6 +399,8 @@ class TaskProvider extends ChangeNotifier {
           _updateLevel();
           _tasksCompletedInSession = math.max(0, _tasksCompletedInSession - 1);
           debugPrint('Removed XP: ${task.xpEarned}, new total: $_totalXP');
+          debugPrint(
+              'Updated level: $_currentLevel, XP to next level: ${getXPToNextLevel()}');
         }
 
         _saveUserStats(); // Save immediately after toggling subtask
@@ -397,7 +442,10 @@ class TaskProvider extends ChangeNotifier {
     if (_currentLevel >= levelThresholds.length) {
       return 0; // Max level reached
     }
-    return levelThresholds[_currentLevel] - _totalXP;
+    final xpNeeded = levelThresholds[_currentLevel] - _totalXP;
+    debugPrint(
+        'XP to next level: $xpNeeded (current XP: $_totalXP, current level: $_currentLevel, next level threshold: ${levelThresholds[_currentLevel]})');
+    return xpNeeded;
   }
 
   // Helper method to get XP progress in current level
@@ -409,7 +457,10 @@ class TaskProvider extends ChangeNotifier {
     final nextLevelXP = levelThresholds[_currentLevel];
     final xpInCurrentLevel = _totalXP - currentLevelXP;
     final xpNeededForLevel = nextLevelXP - currentLevelXP;
-    return xpInCurrentLevel / xpNeededForLevel;
+    final progress = xpInCurrentLevel / xpNeededForLevel;
+    debugPrint(
+        'Level progress: $progress (XP in current level: $xpInCurrentLevel, XP needed for level: $xpNeededForLevel)');
+    return progress;
   }
 
   // Helper method to get XP earned today
@@ -669,7 +720,7 @@ class TaskProvider extends ChangeNotifier {
     }
   }
 
-  void updateTaskXP(String taskId, int xp) {
+  Future<void> updateTaskXP(String taskId, int xp) async {
     debugPrint('Updating task XP: task=$taskId, xp=$xp');
 
     final taskIndex = _tasks.indexWhere((task) => task.id == taskId);
@@ -678,16 +729,24 @@ class TaskProvider extends ChangeNotifier {
       final updatedTask = task.copyWith(xpEarned: xp);
       _tasks[taskIndex] = updatedTask;
 
+      // Update totalXP
+      _totalXP += xp;
+      await _saveUserStats();
+
+      // Update level based on new XP
+      _updateLevel();
+
       // Save to Firebase
       debugPrint('Saving updated task XP to Firebase');
-      _taskService.updateTask(updatedTask).then((_) {
+      try {
+        await _taskService.updateTask(updatedTask);
         debugPrint('Successfully saved task XP to Firebase');
         notifyListeners(); // Notify listeners after successful update
-      }).catchError((error) {
+      } catch (error) {
         debugPrint('Error saving task XP to Firebase: $error');
         _error = 'Failed to update task XP: $error';
         notifyListeners();
-      });
+      }
     } else {
       debugPrint('Task not found: $taskId');
     }
@@ -713,5 +772,41 @@ class TaskProvider extends ChangeNotifier {
     if (completedTasks >= 3) achievements.add('quick_completer');
 
     return achievements;
+  }
+
+  // Public method to refresh progress data from Firebase
+  Future<void> refreshProgressFromFirebase() async {
+    debugPrint('Refreshing progress data from Firebase');
+    _isLoading = true;
+    notifyListeners();
+
+    try {
+      final progressData = await _taskService.getUserProgress();
+      if (progressData != null) {
+        _totalXP = progressData['totalXP'] ?? _totalXP;
+        _currentLevel = progressData['currentLevel'] ?? _currentLevel;
+        _streak = progressData['streak'] ?? _streak;
+
+        if (progressData['lastCompletionDate'] != null) {
+          _lastCompletionDate = DateTime.fromMillisecondsSinceEpoch(
+              progressData['lastCompletionDate'] as int);
+        }
+
+        debugPrint('Refreshed user stats from Firebase');
+        debugPrint(
+            'Current XP: $_totalXP, Level: $_currentLevel, XP to next level: ${getXPToNextLevel()}');
+
+        // Make sure level is up to date with XP
+        _updateLevel();
+      } else {
+        debugPrint('No progress data found in Firebase');
+      }
+    } catch (e) {
+      _error = 'Failed to refresh progress from Firebase: $e';
+      debugPrint(_error);
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
   }
 }

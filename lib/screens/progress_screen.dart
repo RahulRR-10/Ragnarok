@@ -4,8 +4,23 @@ import '../providers/task_provider.dart';
 import '../models/task.dart';
 import 'main_screen.dart';
 
-class ProgressScreen extends StatelessWidget {
+class ProgressScreen extends StatefulWidget {
   const ProgressScreen({super.key});
+
+  @override
+  State<ProgressScreen> createState() => _ProgressScreenState();
+}
+
+class _ProgressScreenState extends State<ProgressScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // Refresh data when screen loads
+    Future.microtask(() {
+      final taskProvider = Provider.of<TaskProvider>(context, listen: false);
+      taskProvider.refreshProgressFromFirebase();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -34,25 +49,27 @@ class ProgressScreen extends StatelessWidget {
               final achievements = taskProvider.checkAchievements();
 
               return SafeArea(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _buildHeader(context),
-                      const SizedBox(height: 24),
-                      _buildLevelCard(context, levelTitle, currentLevel,
-                          levelProgress, xpToNextLevel),
-                      const SizedBox(height: 24),
-                      _buildStatsGrid(
-                          context, totalXP, todayXP, taskProvider.streak),
-                      const SizedBox(height: 24),
-                      _buildAchievements(context, achievements),
-                      const SizedBox(height: 24),
-                      _buildRecentTasks(context, taskProvider.tasks),
-                    ],
-                  ),
-                ),
+                child: taskProvider.isLoading
+                    ? const Center(child: CircularProgressIndicator())
+                    : SingleChildScrollView(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _buildHeader(context),
+                            const SizedBox(height: 24),
+                            _buildLevelCard(context, levelTitle, currentLevel,
+                                levelProgress, xpToNextLevel),
+                            const SizedBox(height: 24),
+                            _buildStatsGrid(
+                                context, totalXP, todayXP, taskProvider.streak),
+                            const SizedBox(height: 24),
+                            _buildAchievements(context, achievements),
+                            const SizedBox(height: 24),
+                            _buildRecentTasks(context, taskProvider.tasks),
+                          ],
+                        ),
+                      ),
               );
             },
           ),
@@ -76,6 +93,9 @@ class ProgressScreen extends StatelessWidget {
           icon: const Icon(Icons.refresh),
           onPressed: () {
             // Refresh progress
+            final taskProvider =
+                Provider.of<TaskProvider>(context, listen: false);
+            taskProvider.refreshProgressFromFirebase();
           },
         ),
       ],

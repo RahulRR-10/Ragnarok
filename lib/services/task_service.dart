@@ -22,6 +22,15 @@ class TaskService {
     return _database.child('users').child(userId).child('tasks');
   }
 
+  // Get a reference to the user's progress
+  DatabaseReference get _userProgressRef {
+    final userId = currentUserId;
+    if (userId == null) {
+      throw Exception('User not authenticated');
+    }
+    return _database.child('users').child(userId).child('progress');
+  }
+
   // Get all tasks for the current user
   Stream<List<Task>> getUserTasks() {
     debugPrint('Getting tasks for user: ${currentUserId}');
@@ -112,5 +121,51 @@ class TaskService {
     final taskData = Map<String, dynamic>.from(snapshot.value as Map);
     taskData['id'] = taskId;
     return Task.fromMap(taskData);
+  }
+
+  // Save user progress data to Firebase
+  Future<void> saveUserProgress({
+    required int totalXP,
+    required int currentLevel,
+    required int streak,
+    required DateTime lastCompletionDate,
+    required Map<String, bool> achievements,
+  }) async {
+    debugPrint('Saving user progress to Firebase');
+
+    try {
+      await _userProgressRef.update({
+        'totalXP': totalXP,
+        'currentLevel': currentLevel,
+        'streak': streak,
+        'lastCompletionDate': lastCompletionDate.millisecondsSinceEpoch,
+        'achievements': achievements,
+        'lastUpdated': DateTime.now().millisecondsSinceEpoch,
+      });
+
+      debugPrint('Successfully saved user progress to Firebase');
+    } catch (e) {
+      debugPrint('Error saving user progress to Firebase: $e');
+      throw Exception('Failed to save user progress: $e');
+    }
+  }
+
+  // Get user progress from Firebase
+  Future<Map<String, dynamic>?> getUserProgress() async {
+    try {
+      final snapshot = await _userProgressRef.get();
+
+      if (!snapshot.exists) {
+        debugPrint('No progress data found in Firebase');
+        return null;
+      }
+
+      final data = Map<String, dynamic>.from(snapshot.value as Map);
+      debugPrint('Retrieved user progress from Firebase');
+      return data;
+    } catch (e) {
+      debugPrint('Error getting user progress from Firebase: $e');
+      return null;
+    }
   }
 }
